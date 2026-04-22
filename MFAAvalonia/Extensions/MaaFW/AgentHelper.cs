@@ -179,14 +179,21 @@ public static class AgentHelper
             throw new FileNotFoundException(errorMsg, executablePath);
         }
 
+        var isPythonProcess = IsPythonProcess(program, executablePath, replacedArgs);
+        var shouldAddUnbufferedFlag = isPythonProcess
+            && replacedArgs.Any(arg => arg.EndsWith(".py", StringComparison.OrdinalIgnoreCase))
+            && !replacedArgs.Any(arg => string.Equals(arg, "-u", StringComparison.OrdinalIgnoreCase));
+
         var startInfo = new ProcessStartInfo
         {
             FileName = executablePath,
             WorkingDirectory = AppPaths.DataRoot,
-            Arguments = $"{(program!.Contains("python") && replacedArgs.Contains(".py") && !replacedArgs.Any(arg => arg.Contains("-u")) ? "-u " : "")}{string.Join(" ", replacedArgs)} {ctx.Client.Id}",
+            Arguments = $"{(shouldAddUnbufferedFlag ? "-u " : "")}{string.Join(" ", replacedArgs)} {ctx.Client.Id}",
             UseShellExecute = false,
             RedirectStandardError = true,
             RedirectStandardOutput = true,
+            StandardErrorEncoding = Encoding.UTF8,
+            StandardOutputEncoding = Encoding.UTF8,
             WindowStyle = ProcessWindowStyle.Hidden,
             CreateNoWindow = true
         };
@@ -194,10 +201,11 @@ public static class AgentHelper
         startInfo.Environment["MFA_INSTANCE_ID"] = processor.InstanceId;
         startInfo.Environment["MFA_INSTANCE_NAME"] =
             MaaProcessorManager.Instance.GetInstanceName(processor.InstanceId) ?? string.Empty;
+        ApplyChildProcessEncodingEnvironmentVariables(startInfo, isPythonProcess);
         ApplyPiEnvironmentVariables(startInfo, processor);
 
         LoggerHelper.Info(
-            $"Agent 启动命令：{program} {(program!.Contains("python") && replacedArgs.Contains(".py") && !replacedArgs.Any(arg => arg.Contains("-u")) ? "-u " : "")}{string.Join(" ", replacedArgs)} {ctx.Client.Id} "
+            $"Agent 启动命令：{program} {(shouldAddUnbufferedFlag ? "-u " : "")}{string.Join(" ", replacedArgs)} {ctx.Client.Id} "
             + $"socket_id={ctx.Client.Id} instance_id={startInfo.Environment["MFA_INSTANCE_ID"]} instance_name={startInfo.Environment["MFA_INSTANCE_NAME"]}");
 
         IMaaAgentClient.AgentServerStartupMethod method = (s, directory) =>
@@ -402,6 +410,35 @@ public static class AgentHelper
             return;
 
         startInfo.Environment[key] = value;
+    }
+
+    private static void ApplyChildProcessEncodingEnvironmentVariables(ProcessStartInfo startInfo, bool isPythonProcess)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            SetEnvironmentVariable(startInfo, "LANG", "C.UTF-8");
+            SetEnvironmentVariable(startInfo, "LC_ALL", "C.UTF-8");
+        }
+
+        if (!isPythonProcess)
+            return;
+
+        // Force Python and pip to emit UTF-8 regardless of the host system locale.
+        SetEnvironmentVariable(startInfo, "PYTHONIOENCODING", "utf-8");
+        SetEnvironmentVariable(startInfo, "PYTHONUTF8", "1");
+    }
+
+    private static bool IsPythonProcess(string? program, string executablePath, IReadOnlyCollection<string> args)
+    {
+        if (!string.IsNullOrWhiteSpace(program)
+            && program.Contains("python", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(executablePath)
+            && Path.GetFileName(executablePath).Contains("python", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return args.Any(arg => arg.EndsWith(".py", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string NormalizePiLanguageCode(string? language)
@@ -632,6 +669,7 @@ public static class AgentHelper
         var outData = line;
         try { outData = Regex.Replace(outData, @"\x1B\[[0-9;]*[a-zA-Z]", ""); }
         catch (Exception) { }
+        outData = DecodeUnicodeEscapes(outData);
 
         DispatcherHelper.PostOnMainThread(() =>
         {
@@ -752,6 +790,12 @@ public static class AgentHelper
     #region 流读取
 
     private static readonly Encoding Utf8Strict = new UTF8Encoding(false, true);
+    private static readonly Regex UnicodeSurrogatePairRegex = new(
+        @"\\u([dD][89abAB][0-9a-fA-F]{2})\\u([dD][cdefCDEF][0-9a-fA-F]{2})",
+        RegexOptions.Compiled);
+    private static readonly Regex UnicodeEscapeRegex = new(
+        @"\\u([0-9a-fA-F]{4})",
+        RegexOptions.Compiled);
     private static readonly Lazy<Encoding> GbkEncoding = new(() =>
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -777,6 +821,33 @@ public static class AgentHelper
         try { return GbkEncoding.Value.GetString(buffer); }
         catch (DecoderFallbackException) { }
         return Big5Encoding.Value.GetString(buffer);
+    }
+
+    private static string DecodeUnicodeEscapes(string text)
+    {
+        if (string.IsNullOrEmpty(text) || text.IndexOf(@"\u", StringComparison.OrdinalIgnoreCase) < 0)
+            return text;
+
+        try
+        {
+            var decoded = UnicodeSurrogatePairRegex.Replace(text, match =>
+            {
+                var high = Convert.ToInt32(match.Groups[1].Value, 16);
+                var low = Convert.ToInt32(match.Groups[2].Value, 16);
+                return char.ConvertFromUtf32(char.ConvertToUtf32((char)high, (char)low));
+            });
+
+            return UnicodeEscapeRegex.Replace(decoded, match =>
+            {
+                var codePoint = Convert.ToInt32(match.Groups[1].Value, 16);
+                return ((char)codePoint).ToString();
+            });
+        }
+        catch (Exception ex)
+        {
+            LoggerHelper.Warning($"解码 Agent Unicode 转义失败：{ex.Message}");
+            return text;
+        }
     }
 
     internal static async Task ReadProcessStreamAsync(Stream stream, Action<string> onLine, CancellationToken token)
