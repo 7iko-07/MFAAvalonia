@@ -1676,6 +1676,17 @@
     <data name="MSVC2022Missing" xml:space="preserve">
         <value>檢測到缺少運行庫 Runtime，請嘗試下載並安裝最新 Microsoft Visual C++ Redistributable (x64) 運行庫。</value>
     </data>
+    <data name="MaaNativeLibraryMissing" xml:space="preserve">
+        <value>檢測到缺少 MAA 依賴檔案，請重新完整解壓或重新安裝程式。</value>
+    </data>
+    <data name="MaaNativeLibraryMissingDetail" xml:space="preserve">
+        <value>缺失檔案：{0}
+
+建議檢查目錄：
+{1}
+
+請不要只單獨複製主程式檔案。</value>
+    </data>
     <data name="MSVC2022DownloadLink" xml:space="preserve">
         <value>下載連結：https://aka.ms/vs/17/release/vc_redist.x64.exe</value>
     </data>

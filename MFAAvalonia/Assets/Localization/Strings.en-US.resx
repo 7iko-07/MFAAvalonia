@@ -1691,6 +1691,17 @@
         <data name="MSVC2022Missing" xml:space="preserve">
             <value>Missing runtime detected. Please try to download and install the latest Microsoft Visual C++ Redistributable (x64).</value>
         </data>
+        <data name="MaaNativeLibraryMissing" xml:space="preserve">
+            <value>Missing MAA dependency files were detected. Please re-extract or reinstall the application completely.</value>
+        </data>
+        <data name="MaaNativeLibraryMissingDetail" xml:space="preserve">
+            <value>Missing files: {0}
+
+Suggested directory to check:
+{1}
+
+Please do not copy only the main executable by itself.</value>
+        </data>
         <data name="MSVC2022DownloadLink" xml:space="preserve">
             <value>Download Link: https://aka.ms/vs/17/release/vc_redist.x64.exe</value>
         </data>

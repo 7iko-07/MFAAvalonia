@@ -22,12 +22,14 @@ using Microsoft.Extensions.DependencyInjection;
 using SukiUI.Dialogs;
 using SukiUI.Toasts;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Security.Authentication;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Net.Http;
@@ -36,6 +38,65 @@ namespace MFAAvalonia;
 
 public partial class App : Application
 {
+    private static readonly IReadOnlyDictionary<string, string[]> MaaNativeLibraryManifestByOs =
+        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["win"] =
+            [
+                "fastdeploy_ppocr_maa.dll",
+                "MaaAdbControlUnit.dll",
+                "MaaAgentClient.dll",
+                "MaaAgentServer.dll",
+                "MaaCustomControlUnit.dll",
+                "MaaFramework.dll",
+                "MaaGamepadControlUnit.dll",
+                "MaaRecordControlUnit.dll",
+                "MaaReplayControlUnit.dll",
+                "MaaToolkit.dll",
+                "MaaUtils.dll",
+                "MaaWin32ControlUnit.dll",
+                "onnxruntime_maa.dll",
+                "opencv_world4_maa.dll",
+                "MaaFramework.Binding.Native.dll",
+            ],
+            ["linux"] =
+            [
+                "libMaaAdbControlUnit.so",
+                "libMaaAgentClient.so",
+                "libMaaAgentServer.so",
+                "libMaaCustomControlUnit.so",
+                "libMaaFramework.so",
+                "libMaaRecordControlUnit.so",
+                "libMaaReplayControlUnit.so",
+                "libMaaToolkit.so",
+                "libMaaUtils.so",
+                "libMaaWlRootsControlUnit.so",
+            ],
+            ["osx"] =
+            [
+                "libMaaAdbControlUnit.dylib",
+                "libMaaAgentClient.dylib",
+                "libMaaAgentServer.dylib",
+                "libMaaCustomControlUnit.dylib",
+                "libMaaFramework.dylib",
+                "libMaaMacOSControlUnit.dylib",
+                "libMaaPlayCoverControlUnit.dylib",
+                "libMaaRecordControlUnit.dylib",
+                "libMaaReplayControlUnit.dylib",
+                "libMaaToolkit.dylib",
+                "libMaaUtils.dylib",
+            ],
+        };
+
+    private sealed class StartupDependencyDiagnosis
+    {
+        public bool IsMaaNativeLibraryMissing { get; init; }
+        public bool IsVisualCppRuntimeMissing { get; init; }
+        public string MissingLibrarySummary { get; init; } = string.Empty;
+        public string ExpectedRuntimeDirectory { get; init; } = string.Empty;
+        public IReadOnlyList<string> ExpectedMaaLibraries { get; init; } = Array.Empty<string>();
+    }
+
     /// <summary>
     /// Gets services.
     /// </summary>
@@ -216,15 +277,10 @@ public partial class App : Application
     {
         TrayIconManager.DisposeTrayIcon(this);
 
-        MaaProcessorManager.Instance.PersistCurrentSelection();
+        Instances.PersistRuntimeState();
 
         foreach (var p in MaaProcessor.Processors)
         {
-            if (p.ViewModel != null)
-            {
-                p.InstanceConfiguration.SetValue(ConfigurationKeys.TaskItems,
-                    p.ViewModel.TaskItemViewModels.ToList().Select(model => model.InterfaceItem));
-            }
             p.SetTasker();
         }
         GlobalHotkeyService.Shutdown();
@@ -583,23 +639,32 @@ public partial class App : Application
             // Windows: 检测 MSVC 2022 缺失问题
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                var baseEx = exception;
-                var isDllNotFound = false;
-
-                // 解包 TypeInitializationException
-                if (baseEx is TypeInitializationException && baseEx.InnerException != null)
-                    baseEx = baseEx.InnerException;
-
-
-                // 启发式检测：如果包含 MaaFramework 且是 加载错误
-                var exStr = exception.ToString();
-                if ((exStr.Contains("MaaFramework") || exStr.Contains("MaaCore")) && (exStr.Contains("DllNotFoundException") || baseEx is DllNotFoundException))
-                {
-                    isDllNotFound = true;
-                }
+                var diagnosis = DiagnoseWindowsStartupDependencyIssue(exception);
+                var isDllNotFound = diagnosis.IsMaaNativeLibraryMissing || diagnosis.IsVisualCppRuntimeMissing;
 
                 if (isDllNotFound)
                 {
+                    if (diagnosis.IsMaaNativeLibraryMissing)
+                    {
+                        var missingMaaMsg = LanguageHelper.GetLocalizedString("MaaNativeLibraryMissing");
+                        if (string.IsNullOrEmpty(missingMaaMsg) || missingMaaMsg == "MaaNativeLibraryMissing")
+                            missingMaaMsg = "检测到缺少 MAA 依赖文件，请重新完整解压或重新安装程序。";
+
+                        var missingMaaDetailFormat = LanguageHelper.GetLocalizedString("MaaNativeLibraryMissingDetail");
+                        if (string.IsNullOrEmpty(missingMaaDetailFormat) || missingMaaDetailFormat == "MaaNativeLibraryMissingDetail")
+                            missingMaaDetailFormat = "缺失文件：{0}\n建议检查目录：\n{1}\n\n请不要只单独复制主程序文件。";
+
+                        var missingLibrarySummary = string.IsNullOrWhiteSpace(diagnosis.MissingLibrarySummary)
+                            ? "MaaFramework.dll"
+                            : diagnosis.MissingLibrarySummary;
+
+                        var expectedRuntimeDirectory = string.IsNullOrWhiteSpace(diagnosis.ExpectedRuntimeDirectory)
+                            ? Path.Combine(AppContext.BaseDirectory, "runtimes")
+                            : diagnosis.ExpectedRuntimeDirectory;
+
+                        message = $"{missingMaaMsg}\n\n{string.Format(missingMaaDetailFormat, missingLibrarySummary, expectedRuntimeDirectory)}";
+                    }
+
                     try
                     {
                         // 尝试显示自定义下载窗口
@@ -646,7 +711,7 @@ public partial class App : Application
                     catch (Exception ex)
                     {
                         LoggerHelper.Error($"无法显示 RuntimeMissingWindow: {ex}");
-                        if (isDllNotFound)
+                        if (diagnosis.IsVisualCppRuntimeMissing)
                         {
                             // 尝试显示自定义下载窗口
                             try
@@ -792,4 +857,201 @@ public partial class App : Application
     // Windows MessageBox P/Invoke
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
+
+    private static StartupDependencyDiagnosis DiagnoseWindowsStartupDependencyIssue(Exception exception)
+    {
+        var expectedRuntimeDirectory = GetExpectedMaaNativeRuntimeDirectory();
+        var expectedMaaLibraries = GetExpectedMaaNativeLibraries();
+
+        var allExceptions = EnumerateExceptions(exception).ToList();
+        var joinedText = string.Join(Environment.NewLine, allExceptions.Select(ex => ex.ToString()));
+        var isLikelyMaaLoadFailure = allExceptions.Any(IsLikelyMaaLoadFailure);
+
+        var missingLibraryNames = allExceptions
+            .SelectMany(ExtractReferencedLibraryNames)
+            .Where(name => IsMaaRelatedLibraryName(name, expectedMaaLibraries))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (missingLibraryNames.Count == 0 &&
+            isLikelyMaaLoadFailure &&
+            expectedMaaLibraries.Count > 0 &&
+            !HasAnyMaaNativeLibrary(expectedRuntimeDirectory, expectedMaaLibraries))
+        {
+            missingLibraryNames.AddRange(expectedMaaLibraries);
+        }
+
+        var actuallyMissingLibraries = missingLibraryNames
+            .Where(name => !LibraryExistsInKnownSearchPaths(name, expectedRuntimeDirectory))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var isVisualCppRuntimeMissing =
+            isLikelyMaaLoadFailure &&
+            actuallyMissingLibraries.Count == 0 &&
+            HasAnyMaaNativeLibrary(expectedRuntimeDirectory, expectedMaaLibraries) &&
+            allExceptions.Any(ex => ex is DllNotFoundException or BadImageFormatException or TypeInitializationException || ex.ToString().Contains("DllNotFoundException", StringComparison.OrdinalIgnoreCase));
+
+        if (isLikelyMaaLoadFailure)
+        {
+            LoggerHelper.Warning(
+                $"启动依赖诊断：Maa加载异常={isLikelyMaaLoadFailure}, 预期MAA文件数量={expectedMaaLibraries.Count}, 缺失MAA文件数量={actuallyMissingLibraries.Count}, 判定缺VC运行库={isVisualCppRuntimeMissing}, 预期目录={expectedRuntimeDirectory}, 异常摘要={joinedText}");
+        }
+
+        return new StartupDependencyDiagnosis
+        {
+            IsMaaNativeLibraryMissing = actuallyMissingLibraries.Count > 0,
+            IsVisualCppRuntimeMissing = isVisualCppRuntimeMissing,
+            MissingLibrarySummary = actuallyMissingLibraries.Count > 0
+                ? string.Join(", ", actuallyMissingLibraries)
+                : string.Join(", ", missingLibraryNames),
+            ExpectedRuntimeDirectory = expectedRuntimeDirectory,
+            ExpectedMaaLibraries = expectedMaaLibraries,
+        };
+    }
+
+    private static IEnumerable<Exception> EnumerateExceptions(Exception exception)
+    {
+        var visited = new HashSet<Exception>();
+        var stack = new Stack<Exception>();
+        stack.Push(exception);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (!visited.Add(current))
+            {
+                continue;
+            }
+
+            yield return current;
+
+            if (current is AggregateException aggregateException)
+            {
+                foreach (var inner in aggregateException.InnerExceptions)
+                {
+                    stack.Push(inner);
+                }
+            }
+
+            if (current.InnerException != null)
+            {
+                stack.Push(current.InnerException);
+            }
+        }
+    }
+
+    private static bool IsLikelyMaaLoadFailure(Exception exception)
+    {
+        var text = exception.ToString();
+        var isLoadException = exception is DllNotFoundException or FileNotFoundException or BadImageFormatException or TypeInitializationException ||
+                              text.Contains("DllNotFoundException", StringComparison.OrdinalIgnoreCase) ||
+                              text.Contains("FileNotFoundException", StringComparison.OrdinalIgnoreCase);
+
+        return isLoadException &&
+               (text.Contains("MaaFramework", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("MaaCore", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("MaaToolkit", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("MaaUtils", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("MaaAgent", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("Maa", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<string> ExtractReferencedLibraryNames(Exception exception)
+    {
+        if (exception is FileNotFoundException fileNotFoundException && !string.IsNullOrWhiteSpace(fileNotFoundException.FileName))
+        {
+            yield return Path.GetFileName(fileNotFoundException.FileName);
+        }
+
+        foreach (Match match in Regex.Matches(exception.ToString(), @"(?i)\b[\w\.-]*Maa[\w\.-]*\.dll\b"))
+        {
+            if (!string.IsNullOrWhiteSpace(match.Value))
+            {
+                yield return Path.GetFileName(match.Value);
+            }
+        }
+    }
+
+    private static bool IsMaaRelatedLibraryName(string? libraryName, IReadOnlyCollection<string> expectedMaaLibraries)
+    {
+        if (string.IsNullOrWhiteSpace(libraryName))
+        {
+            return false;
+        }
+
+        return expectedMaaLibraries.Contains(libraryName, StringComparer.OrdinalIgnoreCase) ||
+               libraryName.Contains("Maa", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasAnyMaaNativeLibrary(string expectedRuntimeDirectory, IReadOnlyCollection<string> expectedMaaLibraries)
+    {
+        try
+        {
+            return expectedMaaLibraries.Any(name => LibraryExistsInKnownSearchPaths(name, expectedRuntimeDirectory));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool LibraryExistsInKnownSearchPaths(string libraryName, string expectedRuntimeDirectory)
+    {
+        var searchDirectories = new[]
+        {
+            AppContext.BaseDirectory,
+            Path.Combine(AppContext.BaseDirectory, "libs"),
+            expectedRuntimeDirectory,
+        };
+
+        return searchDirectories.Any(directory =>
+        {
+            try
+            {
+                return Directory.Exists(directory) &&
+                       File.Exists(Path.Combine(directory, libraryName));
+            }
+            catch
+            {
+                return false;
+            }
+        });
+    }
+
+    private static string GetExpectedMaaNativeRuntimeDirectory()
+    {
+        var runtimeIdentifier = $"{GetCurrentRuntimeOsName()}-{VersionChecker.GetNormalizedArchitecture()}";
+        return Path.Combine(AppContext.BaseDirectory, "runtimes", runtimeIdentifier, "native");
+    }
+
+    private static string GetCurrentRuntimeOsName()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return "win";
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            return "linux";
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            return "osx";
+        }
+
+        return "unknown";
+    }
+
+    private static IReadOnlyList<string> GetExpectedMaaNativeLibraries()
+    {
+        if (MaaNativeLibraryManifestByOs.TryGetValue(GetCurrentRuntimeOsName(), out var libraries))
+        {
+            return libraries;
+        }
+
+        return Array.Empty<string>();
+    }
 }

@@ -1887,6 +1887,17 @@
   <data name="MSVC2022Missing" xml:space="preserve">
             <value>不足しているランタイムが検出されました。最新の Microsoft Visual C++ 再頒布可能パッケージ (x64) をダウンロードしてインストールしてみてください。</value>
         </data>
+  <data name="MaaNativeLibraryMissing" xml:space="preserve">
+            <value>MAA の依存ファイルが不足しています。アプリを完全に再展開するか、再インストールしてください。</value>
+        </data>
+  <data name="MaaNativeLibraryMissingDetail" xml:space="preserve">
+            <value>不足ファイル: {0}
+
+確認をおすすめするディレクトリ:
+{1}
+
+実行ファイルだけを単独でコピーしないでください。</value>
+        </data>
   <data name="MSVC2022DownloadLink" xml:space="preserve">
             <value>ダウンロードリンク: https://aka.ms/vs/17/release/vc_redist.x64.exe</value>
         </data>
