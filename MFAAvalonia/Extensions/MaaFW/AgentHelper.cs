@@ -131,9 +131,13 @@ public static class AgentHelper
         };
 
         var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        var identifier = string.IsNullOrWhiteSpace(agentConfig.Identifier)
+        var baseIdentifier = string.IsNullOrWhiteSpace(agentConfig.Identifier)
             ? new string(Enumerable.Repeat(chars, 8).Select(c => c[Random.Next(c.Length)]).ToArray())
             : agentConfig.Identifier;
+        // Append instance ID to prevent socket name collision when multiple instances share the same config identifier.
+        var identifier = string.IsNullOrWhiteSpace(agentConfig.Identifier)
+            ? baseIdentifier
+            : $"{baseIdentifier}_{processor.InstanceId}";
         LoggerHelper.Info($"Agent 标识符：{identifier}");
 
         ctx.Client = instanceConfig.GetValue(ConfigurationKeys.AgentTcpMode, false)
