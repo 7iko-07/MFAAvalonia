@@ -103,6 +103,7 @@ public static class ConfigurationKeys
     public const string BackgroundAnimations = "BackgroundAnimations";
     public const string BackgroundTransitions = "BackgroundTransitions";
     public const string ColorTheme = "ColorTheme";
+    public const string ColorThemeDefaultMigrated = "ColorThemeDefaultMigrated";
     public const string BackgroundImagePath = "BackgroundImagePath";
     public const string BackgroundImageOpacity = "BackgroundImageOpacity";
     public const string FontScale = "FontScale";

@@ -24,6 +24,7 @@ using SukiUI.Dialogs;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -36,6 +37,8 @@ public partial class TaskQueueViewModel : ViewModelBase
 {
     private readonly MaaProcessor _processorField;
     private string? _savedControllerName;
+    private const string DefaultTaskGroupName = "__MFAUngroupedTasks__";
+    private ObservableCollection<DragItemViewModel>? _subscribedTaskItems;
     public MaaProcessor Processor => _processorField;
 
     public TaskQueueViewModel() : this(MaaProcessorManager.Instance.Current.InstanceId)
@@ -64,6 +67,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         IsRunning = _processorField.TaskQueue.Count > 0;
         _processorField.TaskQueue.CountChanged += OnTaskQueueCountChanged;
         LanguageHelper.LanguageChanged += OnLanguageChanged;
+        SubscribeTaskItemCollection(TaskItemViewModels);
 
         // Re-initialize with the correct processor since base constructor might have used Current
         Initialize();
@@ -429,11 +433,159 @@ public partial class TaskQueueViewModel : ViewModelBase
     [ObservableProperty] private bool _toggleEnable = true;
 
     [ObservableProperty] private ObservableCollection<DragItemViewModel> _taskItemViewModels = [];
+    [ObservableProperty] private ObservableCollection<TaskItemGroupViewModel> _taskItemGroups = [];
+    [ObservableProperty] private bool _hasTaskGroups;
 
     partial void OnTaskItemViewModelsChanged(ObservableCollection<DragItemViewModel> value)
     {
+        SubscribeTaskItemCollection(value);
+        RebuildTaskItemGroups();
         if (ConfigurationManager.IsSwitching) return;
         Processor.InstanceConfiguration.SetValue(ConfigurationKeys.TaskItems, value.Where(model => !model.IsResourceOptionItem).Select(model => model.InterfaceItem).ToList());
+    }
+
+    private void SubscribeTaskItemCollection(ObservableCollection<DragItemViewModel>? value)
+    {
+        if (ReferenceEquals(_subscribedTaskItems, value))
+        {
+            return;
+        }
+
+        if (_subscribedTaskItems != null)
+        {
+            _subscribedTaskItems.CollectionChanged -= OnTaskItemsChangedForGrouping;
+        }
+
+        _subscribedTaskItems = value;
+
+        if (_subscribedTaskItems != null)
+        {
+            _subscribedTaskItems.CollectionChanged += OnTaskItemsChangedForGrouping;
+        }
+    }
+
+    private void OnTaskItemsChangedForGrouping(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        RebuildTaskItemGroups();
+    }
+
+    public void RebuildTaskItemGroups()
+    {
+        var tasks = TaskItemViewModels.ToList();
+        var interfaceGroups = MaaProcessor.Interface?.Group?
+            .Where(group => !string.IsNullOrWhiteSpace(group.Name))
+            .ToList() ?? [];
+        var hasTaskGroupNames = tasks.Any(item =>
+            item.InterfaceItem?.Group?.Any(groupName => !string.IsNullOrWhiteSpace(groupName)) == true);
+        var expandedStates = TaskItemGroups
+            .ToDictionary(group => group.Name, group => group.IsExpanded, StringComparer.Ordinal);
+
+        HasTaskGroups = interfaceGroups.Count > 0 || hasTaskGroupNames;
+        TaskItemGroups.Clear();
+
+        if (!HasTaskGroups)
+        {
+            return;
+        }
+
+        var groupsByName = new Dictionary<string, TaskItemGroupViewModel>(StringComparer.Ordinal);
+        var orderedGroups = new List<TaskItemGroupViewModel>();
+
+        foreach (var interfaceGroup in interfaceGroups)
+        {
+            var group = CreateTaskItemGroup(interfaceGroup);
+            if (expandedStates.TryGetValue(group.Name, out var isExpanded))
+            {
+                group.IsExpanded = isExpanded;
+            }
+            groupsByName[group.Name] = group;
+            orderedGroups.Add(group);
+        }
+
+        var defaultGroup = GetOrCreateTaskItemGroup(groupsByName, orderedGroups, DefaultTaskGroupName, LangKeys.CommonSetting.ToLocalization(), isExpanded: true);
+
+        foreach (var item in tasks)
+        {
+            var groupName = item.InterfaceItem?.Group?
+                .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+
+            var group = string.IsNullOrWhiteSpace(groupName)
+                ? defaultGroup
+                : GetOrCreateTaskItemGroup(groupsByName, orderedGroups, groupName!, groupName!, isExpanded: true);
+            if (expandedStates.TryGetValue(group.Name, out var isExpanded))
+            {
+                group.IsExpanded = isExpanded;
+            }
+
+            group.Items.Add(item);
+        }
+
+        foreach (var group in orderedGroups.Where(group => group.Items.Count > 0))
+        {
+            TaskItemGroups.Add(group);
+        }
+    }
+
+    private static TaskItemGroupViewModel CreateTaskItemGroup(MaaInterface.MaaInterfaceTaskGroup interfaceGroup)
+    {
+        var group = new TaskItemGroupViewModel
+        {
+            Name = interfaceGroup.Name ?? string.Empty,
+            Label = LanguageHelper.GetLocalizedDisplayName(interfaceGroup.Label, interfaceGroup.Name ?? string.Empty),
+            Description = ResolveTaskGroupDescription(interfaceGroup.Description),
+            Icon = ResolveTaskGroupIcon(interfaceGroup.Icon),
+            IsExpanded = interfaceGroup.DefaultExpand ?? true,
+        };
+        group.HasDescription = !string.IsNullOrWhiteSpace(group.Description);
+        group.HasIcon = !string.IsNullOrWhiteSpace(group.Icon);
+        return group;
+    }
+
+    private static TaskItemGroupViewModel GetOrCreateTaskItemGroup(
+        Dictionary<string, TaskItemGroupViewModel> groupsByName,
+        List<TaskItemGroupViewModel> orderedGroups,
+        string name,
+        string label,
+        bool isExpanded)
+    {
+        if (groupsByName.TryGetValue(name, out var group))
+        {
+            return group;
+        }
+
+        group = new TaskItemGroupViewModel
+        {
+            Name = name,
+            Label = label,
+            IsExpanded = isExpanded,
+        };
+        groupsByName[name] = group;
+        orderedGroups.Add(group);
+        return group;
+    }
+
+    private static string ResolveTaskGroupDescription(string? description)
+    {
+        try
+        {
+            return LanguageHelper.GetLocalizedString(description.ResolveContentAsync().Result);
+        }
+        catch (Exception ex)
+        {
+            LoggerHelper.Warning($"Failed to resolve task group description: {ex.Message}");
+            return string.Empty;
+        }
+    }
+
+    private static string ResolveTaskGroupIcon(string? icon)
+    {
+        if (string.IsNullOrWhiteSpace(icon))
+        {
+            return string.Empty;
+        }
+
+        var iconValue = LanguageHelper.GetLocalizedString(icon);
+        return MaaInterface.ReplacePlaceholder(iconValue, MaaProcessor.ResourceBase, true) ?? string.Empty;
     }
 
     [RelayCommand]
@@ -578,7 +730,9 @@ public partial class TaskQueueViewModel : ViewModelBase
     {
         using var _ = BeginUiLogScope("SelectAllTasks");
         foreach (var task in TaskItemViewModels)
-            task.IsChecked = true;
+        {
+            task.IsChecked = !IsExcludedFromSelectAll(task);
+        }
         LoggerHelper.UserAction("全选任务", $"taskCount={TaskItemViewModels.Count}",
             operation: "SelectAllTasks", instanceId: Processor.InstanceId, instanceName: InstanceName);
     }
@@ -591,6 +745,11 @@ public partial class TaskQueueViewModel : ViewModelBase
             task.IsChecked = false;
         LoggerHelper.UserAction("取消全选任务", $"taskCount={TaskItemViewModels.Count}",
             operation: "SelectNoneTasks", instanceId: Processor.InstanceId, instanceName: InstanceName);
+    }
+
+    private static bool IsExcludedFromSelectAll(DragItemViewModel task)
+    {
+        return task.InterfaceItem?.ExcludeFromSelectAll == true;
     }
 
     [RelayCommand]
@@ -621,6 +780,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         presets?.ForEach(p => p.InitializeDisplayName());
         Presets = presets;
         HasPresets = presets is { Count: > 0 };
+        RebuildTaskItemGroups();
     }
 
     [RelayCommand]
@@ -1356,6 +1516,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         {
             OnPropertyChanged(nameof(CurrentDevicePlaceholderText));
             OnPropertyChanged(nameof(CurrentDeviceTooltipText));
+            RebuildTaskItemGroups();
 
             if (Devices.Count == 1 && Devices[0] is EmptyDevicePlaceholder)
             {

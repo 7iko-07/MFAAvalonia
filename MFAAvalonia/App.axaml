@@ -30,7 +30,7 @@
     <Application.Styles>
         <FluentTheme />
         <styling:FluentAvaloniaTheme />
-        <sukiUi:SukiTheme ThemeColor="Blue" />
+        <sukiUi:SukiTheme ThemeColor="Pink" />
         <StyleInclude Source="avares://MFAAvalonia.Core/Views/UserControls/HotKeyEditor.axaml" />
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
 

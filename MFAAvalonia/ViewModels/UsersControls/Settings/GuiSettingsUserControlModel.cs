@@ -211,12 +211,16 @@ public partial class GuiSettingsUserControlModel : ViewModelBase
     /// </summary>
     internal static SukiColorTheme FindColorThemeFromConfig()
     {
-        var defaultTheme = _theme.ColorThemes.First(t => t.DisplayName.Equals("blue", StringComparison.OrdinalIgnoreCase));
+        var defaultTheme = _theme.ColorThemes.FirstOrDefault(t => t.DisplayName.Equals("pink", StringComparison.OrdinalIgnoreCase))
+                           ?? _theme.ColorThemes.First(t => t.DisplayName.Equals("blue", StringComparison.OrdinalIgnoreCase));
 
         // 新格式：直接存储 DisplayName 字符串
         var themeName = ConfigurationManager.Current.GetValue(ConfigurationKeys.ColorTheme, string.Empty);
         if (!string.IsNullOrEmpty(themeName))
         {
+            if (ShouldMigrateLegacyBlueDefault(themeName))
+                return defaultTheme;
+
             var found = _theme.ColorThemes.FirstOrDefault(t => t.DisplayName.Equals(themeName, StringComparison.OrdinalIgnoreCase));
             if (found != null) return found;
         }
@@ -227,12 +231,27 @@ public partial class GuiSettingsUserControlModel : ViewModelBase
             var displayName = jObj["DisplayName"]?.ToString();
             if (!string.IsNullOrEmpty(displayName))
             {
+                if (ShouldMigrateLegacyBlueDefault(displayName))
+                    return defaultTheme;
+
                 var found = _theme.ColorThemes.FirstOrDefault(t => t.DisplayName.Equals(displayName, StringComparison.OrdinalIgnoreCase));
                 if (found != null) return found;
             }
         }
 
         return defaultTheme;
+    }
+
+    private static bool ShouldMigrateLegacyBlueDefault(string displayName)
+    {
+        if (!displayName.Equals("blue", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (ConfigurationManager.Current.GetValue(ConfigurationKeys.ColorThemeDefaultMigrated, false))
+            return false;
+
+        ConfigurationManager.Current.SetValue(ConfigurationKeys.ColorThemeDefaultMigrated, true);
+        return true;
     }
 
     partial void OnBaseThemeChanged(ThemeVariant value) => HandlePropertyChanged(ConfigurationKeys.BaseTheme, value, t => _theme.ChangeBaseTheme(t));

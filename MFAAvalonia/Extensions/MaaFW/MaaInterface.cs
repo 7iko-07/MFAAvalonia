@@ -628,6 +628,9 @@ public partial class MaaInterface
             DefaultValueHandling = DefaultValueHandling.Include)]
         public bool? Check = false;
 
+        /// <summary>是否在点击“全选”时保持未选中。用户仍可手动勾选该任务。</summary>
+        [JsonProperty("exclude_from_select_all")] public bool? ExcludeFromSelectAll;
+
         /// <summary>任务详细描述信息，帮助用户理解任务功能。支持文件路径、URL或直接文本，内容支持Markdown格式。</summary>
         [JsonProperty("description")] public string? Description;
 
@@ -742,6 +745,7 @@ public partial class MaaInterface
              if (!string.IsNullOrEmpty(other.Remark)) Remark = other.Remark;
              if (!string.IsNullOrEmpty(other.Entry)) Entry = other.Entry;
              if (other.Check != null) Check = other.Check;
+             if (other.ExcludeFromSelectAll != null) ExcludeFromSelectAll = other.ExcludeFromSelectAll;
              if (!string.IsNullOrEmpty(other.Description)) Description = other.Description;
              if (!string.IsNullOrEmpty(other.Icon)) Icon = other.Icon;
              if (other.Resource != null) Resource = other.Resource;

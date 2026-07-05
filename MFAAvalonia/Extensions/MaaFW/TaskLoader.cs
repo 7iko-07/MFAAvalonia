@@ -470,6 +470,7 @@ public class TaskLoader(MaaInterface? maaInterface, TaskQueueViewModel taskQueue
 
         oldItem.InterfaceItem.Entry = newItem.Entry;
         oldItem.InterfaceItem.Label = newItem.Label;
+        oldItem.InterfaceItem.ExcludeFromSelectAll = newItem.ExcludeFromSelectAll;
         oldItem.InterfaceItem.PipelineOverride = newItem.PipelineOverride;
         oldItem.InterfaceItem.Description = newItem.Description;
         oldItem.InterfaceItem.Document = newItem.Document;

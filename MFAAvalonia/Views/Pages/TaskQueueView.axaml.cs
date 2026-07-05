@@ -561,10 +561,36 @@ public partial class TaskQueueView : UserControl
             return;
 
         var point = e.GetCurrentPoint(control);
-        if (!point.Properties.IsRightButtonPressed)
-            return;
+        var item = control.DataContext as DragItemViewModel;
 
-        _lastTaskMenuItem = control.DataContext as DragItemViewModel;
+        if (point.Properties.IsLeftButtonPressed && item != null)
+        {
+            if (!item.IsTaskSupported)
+            {
+                item.EnableSetting = false;
+                return;
+            }
+
+            if (DataContext is TaskQueueViewModel vm)
+            {
+                foreach (var task in vm.TaskItemViewModels.Where(task => !ReferenceEquals(task, item) && task.EnableSetting))
+                {
+                    task.EnableSetting = false;
+                }
+            }
+
+            item.EnableSetting = true;
+            if (TaskListBox != null)
+            {
+                TaskListBox.SelectedItem = item;
+            }
+            return;
+        }
+
+        if (point.Properties.IsRightButtonPressed)
+        {
+            _lastTaskMenuItem = item;
+        }
     }
 
     private static void ApplyTaskMenuEnabledStates(ContextMenu menu, DragItemViewModel? currentItem)
