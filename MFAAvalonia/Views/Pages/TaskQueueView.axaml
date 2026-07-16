@@ -1276,9 +1276,23 @@
                                                                VerticalAlignment="Center" />
                                                 </Grid>
                                             </Expander.Header>
-                                            <ItemsControl ItemsSource="{Binding Items}"
-                                                          ItemTemplate="{StaticResource TaskQueueRowTemplate}"
-                                                          Margin="8,0,8,8" />
+                                            <ListBox Classes="Fluent"
+                                                     ItemsSource="{Binding Items}"
+                                                     ItemTemplate="{StaticResource TaskQueueRowTemplate}"
+                                                     DragDrop.AllowDrop="{Binding Idle,Source={x:Static helper:Instances.RootViewModel}}"
+                                                     extensions:DragDropExtensions.EnableDragDrop="True"
+                                                     extensions:DragDropExtensions.DragStartThreshold="2"
+                                                     extensions:DragDropExtensions.EnableAnimation="True"
+                                                     SelectionChanged="SelectingItemsControl_OnSelectionChanged"
+                                                     KeyDown="TaskListBox_OnKeyDown"
+                                                     Margin="8,0,8,8">
+                                                <ListBox.Styles>
+                                                    <Style Selector="ListBoxItem">
+                                                        <Setter Property="Padding" Value="8" />
+                                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                    </Style>
+                                                </ListBox.Styles>
+                                            </ListBox>
                                         </Expander>
                                     </Border>
                                 </DataTemplate>

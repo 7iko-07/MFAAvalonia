@@ -39,6 +39,7 @@ public partial class TaskQueueViewModel : ViewModelBase
     private string? _savedControllerName;
     private const string DefaultTaskGroupName = "__MFAUngroupedTasks__";
     private ObservableCollection<DragItemViewModel>? _subscribedTaskItems;
+    private bool _rebuildingTaskGroups;
     public MaaProcessor Processor => _processorField;
 
     public TaskQueueViewModel() : this(MaaProcessorManager.Instance.Current.InstanceId)
@@ -471,6 +472,9 @@ public partial class TaskQueueViewModel : ViewModelBase
 
     public void RebuildTaskItemGroups()
     {
+        _rebuildingTaskGroups = true;
+        try
+        {
         var tasks = TaskItemViewModels.ToList();
         var interfaceGroups = MaaProcessor.Interface?.Group?
             .Where(group => !string.IsNullOrWhiteSpace(group.Name))
@@ -522,7 +526,51 @@ public partial class TaskQueueViewModel : ViewModelBase
 
         foreach (var group in orderedGroups.Where(group => group.Items.Count > 0))
         {
+            group.Items.CollectionChanged += OnGroupedTaskItemsChanged;
             TaskItemGroups.Add(group);
+        }
+        }
+        finally
+        {
+            _rebuildingTaskGroups = false;
+        }
+    }
+
+    private void OnGroupedTaskItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_rebuildingTaskGroups || sender is not ObservableCollection<DragItemViewModel> groupItems ||
+            e.Action != NotifyCollectionChangedAction.Move || e.NewItems is not { Count: 1 })
+        {
+            return;
+        }
+
+        var movedItem = (DragItemViewModel)e.NewItems[0]!;
+        var sourceIndex = TaskItemViewModels.IndexOf(movedItem);
+        if (sourceIndex < 0)
+        {
+            return;
+        }
+
+        // The grouped ListBox owns a projection. Translate its move back to the canonical
+        // task collection so execution order and persisted order stay in sync.
+        var sibling = e.NewStartingIndex < groupItems.Count - 1
+            ? groupItems[e.NewStartingIndex + 1]
+            : e.NewStartingIndex > 0 ? groupItems[e.NewStartingIndex - 1] : null;
+        if (sibling == null)
+        {
+            return;
+        }
+
+        var siblingIndex = TaskItemViewModels.IndexOf(sibling);
+        var targetIndex = e.NewStartingIndex < groupItems.Count - 1 ? siblingIndex : siblingIndex + 1;
+        if (sourceIndex < targetIndex)
+        {
+            targetIndex--;
+        }
+
+        if (targetIndex >= 0 && targetIndex < TaskItemViewModels.Count && targetIndex != sourceIndex)
+        {
+            TaskItemViewModels.Move(sourceIndex, targetIndex);
         }
     }
 
