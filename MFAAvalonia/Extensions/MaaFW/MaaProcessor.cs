@@ -887,6 +887,7 @@ public class MaaProcessor
                 await PrewarmScreenshotTaskerAsync(token);
             }
         }
+
         return MaaTasker;
     }
 
@@ -907,6 +908,7 @@ public class MaaProcessor
             ResetScreencapFailureLogFlags();
             await PrewarmScreenshotTaskerAsync(token);
         }
+
         return (MaaTasker, tuple.Item2, tuple.Item3);
     }
 
@@ -1069,6 +1071,24 @@ public class MaaProcessor
     private int _isConnecting;
     private bool _suppressConnectionAttemptErrorToast;
     public bool IsConnecting => _isConnecting != 0;
+
+    private async Task<bool> EnsureAgentsStartedAsync(MaaTasker tasker, CancellationToken token)
+    {
+        var agentConfigs = Interface?.Agent;
+        if (!AgentHelper.HasAgentConfigs(agentConfigs) || _agentStarted)
+            return true;
+
+        AgentHelper.KillAllAgents(_agentContexts);
+        _agentContexts = await AgentHelper.StartAgentsAsync(
+            tasker,
+            agentConfigs!,
+            InstanceConfiguration,
+            this,
+            token);
+
+        _agentStarted = _agentContexts.Count > 0;
+        return _agentStarted;
+    }
 
     private MaaController? GetScreenshotController(bool test)
     {
@@ -2890,6 +2910,13 @@ public class MaaProcessor
 
         var token = CancellationTokenSource.Token;
 
+        if (MaaTasker != null
+            && HasReusableMainTasker()
+            && !await EnsureAgentsStartedAsync(MaaTasker, token))
+        {
+            return;
+        }
+
         if (!onlyStart)
         {
             tasks ??= new List<DragItemViewModel>();
@@ -3732,7 +3759,15 @@ public class MaaProcessor
                     return Task.CompletedTask;
                 }
 
-                CancelOperations(status == MFATask.MFATaskStatus.STOPPED && !_agentStarted && _agentContexts.Count > 0);
+                var agentProcessesKilled = status == MFATask.MFATaskStatus.STOPPED
+                    && _agentContexts.Count > 0;
+                if (agentProcessesKilled)
+                {
+                    AgentHelper.KillAgentProcesses(_agentContexts);
+                    _agentStarted = false;
+                }
+
+                CancelOperations();
 
                 TaskQueue.Clear();
 
@@ -3752,7 +3787,7 @@ public class MaaProcessor
                             for (int i = 0; i < maxRetries; i++)
                             {
                                 LoggerHelper.Info($"正在尝试停止任务执行器，第 {i + 1} 次。");
-                                stopResult = AbortCurrentTasker();
+                                stopResult = AbortCurrentTasker(waitForCompletion: !agentProcessesKilled);
                                 LoggerHelper.Info($"第 {i + 1} 次停止任务执行器返回：{stopResult}，准备重试。");
 
                                 if (stopResult == MaaJobStatus.Succeeded)
@@ -3767,6 +3802,7 @@ public class MaaProcessor
                         if (status == MFATask.MFATaskStatus.STOPPED)
                         {
                             StopAgents();
+                            MaaTasker = null;
                         }
                     }
 
@@ -3828,11 +3864,15 @@ public class MaaProcessor
         }, null, "停止maafw任务");
     }
 
-    private MaaJobStatus AbortCurrentTasker()
+    private MaaJobStatus AbortCurrentTasker(bool waitForCompletion = true)
     {
         if (MaaTasker == null)
             return MaaJobStatus.Succeeded;
-        var status = MaaTasker.Stop().Wait();
+        var stopJob = MaaTasker.Stop();
+        if (!waitForCompletion)
+            return MaaJobStatus.Succeeded;
+
+        var status = stopJob.Wait();
 
         return status;
     }

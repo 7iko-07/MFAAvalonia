@@ -31,6 +31,7 @@ public class AgentContext
 {
     public MaaAgentClient? Client { get; set; }
     public Process? Process { get; set; }
+    public bool ForceKilled { get; set; }
     public CancellationTokenSource? ReadCancellationTokenSource { get; set; }
     public readonly Lock ReadLock = new();
     public SafeJobHandle? JobHandle { get; set; }
@@ -537,6 +538,28 @@ public static class AgentHelper
     }
 
     /// <summary>
+    /// 立即终止所有 Agent 进程，不等待 Agent 当前任务自行结束。
+    /// 后续客户端与句柄清理由 KillAllAgents 统一完成。
+    /// </summary>
+    public static void KillAgentProcesses(IEnumerable<AgentContext> contexts)
+    {
+        foreach (var context in contexts)
+        {
+            context.ForceKilled = true;
+            try
+            {
+                var process = context.Process;
+                if (process is { HasExited: false })
+                    process.Kill(true);
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.Warning($"立即终止 Agent 进程失败：{ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
     /// 终止单个 Agent（不处理 MaaTasker）
     /// </summary>
     public static void KillSingleAgent(AgentContext ctx, MaaTasker? taskerToDispose = null)
@@ -550,7 +573,7 @@ public static class AgentHelper
         ctx.Process = null;
 
         // 步骤 1: 停止 AgentClient
-        if (agentClient != null)
+        if (agentClient != null && !ctx.ForceKilled)
         {
             LoggerHelper.Info("正在停止 AgentClient 连接。");
             try
@@ -576,6 +599,10 @@ public static class AgentHelper
             {
                 LoggerHelper.Warning($"检查 AgentClient LinkStop 状态失败：{e.Message}");
             }
+        }
+        else if (agentClient != null)
+        {
+            LoggerHelper.Info("Agent 进程已被强制终止，跳过 AgentClient LinkStop。");
         }
 
         // 步骤 2: 终止进程
