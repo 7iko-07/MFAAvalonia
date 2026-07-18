@@ -340,10 +340,6 @@ public partial class RootView : SukiWindow
                             ToastHelper.Info(MaaProcessor.Interface.Message);
                         }
 
-                        if (!string.IsNullOrWhiteSpace(MaaProcessor.Interface?.Welcome))
-                        {
-                            await AnnouncementViewModel.AddAnnouncementAsync(MaaProcessor.Interface.Welcome, projectDir: AppPaths.DataRoot);
-                        }
                     }));
 
 
@@ -364,6 +360,17 @@ public partial class RootView : SukiWindow
                     });
 
                     await Task.Delay(300);
+                    if (!Convert.ToBoolean(GlobalConfiguration.GetValue(
+                            ConfigurationKeys.HasShownWelcomeAnnouncement,
+                            bool.FalseString))
+                        && !string.IsNullOrWhiteSpace(MaaProcessor.Interface?.Welcome))
+                    {
+                        await AnnouncementViewModel.AddAnnouncementAsync(
+                            MaaProcessor.Interface.Welcome,
+                            projectDir: AppPaths.DataRoot,
+                            isWelcome: true);
+                    }
+
                     await AnnouncementViewModel.CheckAnnouncement();
                 }, name: "公告和最新版本检测");
             }
