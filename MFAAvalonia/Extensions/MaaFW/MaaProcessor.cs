@@ -3809,7 +3809,11 @@ public class MaaProcessor
                     HandleStopResult(status, stopResult, onlyStart, action, isUpdateRelated);
                     DispatcherHelper.PostOnMainThread(() =>
                     {
-                        if (ViewModel != null) ViewModel.ToggleEnable = true;
+                        if (ViewModel != null)
+                        {
+                            ViewModel.IsRunning = false;
+                            ViewModel.ToggleEnable = true;
+                        }
                     });
                 });
             }
@@ -3817,7 +3821,11 @@ public class MaaProcessor
             {
                 DispatcherHelper.PostOnMainThread(() =>
                 {
-                    if (ViewModel != null) ViewModel.ToggleEnable = true;
+                    if (ViewModel != null)
+                    {
+                        ViewModel.IsRunning = false;
+                        ViewModel.ToggleEnable = true;
+                    }
                 });
                 HandleStopException(ex);
             }

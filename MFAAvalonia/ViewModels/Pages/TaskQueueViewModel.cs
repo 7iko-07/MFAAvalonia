@@ -131,7 +131,8 @@ public partial class TaskQueueViewModel : ViewModelBase
     {
         DispatcherHelper.RunOnMainThread(() =>
         {
-            IsRunning = e.NewValue > 0;
+            if (e.NewValue > 0)
+                IsRunning = true;
         });
     }
 
