@@ -565,25 +565,7 @@ public partial class TaskQueueView : UserControl
 
         if (point.Properties.IsLeftButtonPressed && item != null)
         {
-            if (!item.IsTaskSupported)
-            {
-                item.EnableSetting = false;
-                return;
-            }
-
-            if (DataContext is TaskQueueViewModel vm)
-            {
-                foreach (var task in vm.TaskItemViewModels.Where(task => !ReferenceEquals(task, item) && task.EnableSetting))
-                {
-                    task.EnableSetting = false;
-                }
-            }
-
-            item.EnableSetting = true;
-            if (TaskListBox != null)
-            {
-                TaskListBox.SelectedItem = item;
-            }
+            SelectTaskForSettings(item, control);
             return;
         }
 
@@ -591,6 +573,39 @@ public partial class TaskQueueView : UserControl
         {
             _lastTaskMenuItem = item;
         }
+    }
+
+    private void TaskCheckBox_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: DragItemViewModel item })
+        {
+            SelectTaskForSettings(item, sender as Control);
+        }
+    }
+
+    private void SelectTaskForSettings(DragItemViewModel item, Control? source)
+    {
+        if (!item.IsTaskSupported)
+        {
+            item.EnableSetting = false;
+            return;
+        }
+
+        if (DataContext is TaskQueueViewModel vm)
+        {
+            foreach (var task in vm.TaskItemViewModels.Where(task => !ReferenceEquals(task, item) && task.EnableSetting))
+            {
+                task.EnableSetting = false;
+            }
+        }
+
+        item.EnableSetting = true;
+
+        var owningListBox = source?
+            .GetVisualAncestors()
+            .OfType<ListBox>()
+            .FirstOrDefault();
+        (owningListBox ?? TaskListBox)?.SetCurrentValue(SelectingItemsControl.SelectedItemProperty, item);
     }
 
     private static void ApplyTaskMenuEnabledStates(ContextMenu menu, DragItemViewModel? currentItem)

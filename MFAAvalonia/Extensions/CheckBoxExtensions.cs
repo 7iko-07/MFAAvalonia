@@ -52,6 +52,7 @@ public class CheckBoxExtensions
             {
                 checkBox.IsChecked = checkBox.IsChecked == false;
                 e.Handled = true;
+                checkBox.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             }
         }
     }

@@ -49,6 +49,7 @@
                               Grid.Column="0"
                               MinWidth="0"
                               Margin="0,0,8,0"
+                              Click="TaskCheckBox_OnClick"
                               extensions:CheckBoxExtensions.EnableRightClickNull="{Binding !IsResourceOptionItem}"
                               HorizontalAlignment="Center"
                               VerticalAlignment="Center"

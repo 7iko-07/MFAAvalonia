@@ -3721,6 +3721,11 @@ public class MaaProcessor
                 ViewModel?.SetCurrentTaskName(string.Empty);
                 if (!ShouldProcessStop(finished))
                 {
+                    if (status == MFATask.MFATaskStatus.STOPPED)
+                    {
+                        StopAgents();
+                    }
+
                     ToastHelper.Warn(LangKeys.NoTaskToStop.ToLocalization());
 
                     TaskQueue.Clear();
@@ -3735,26 +3740,36 @@ public class MaaProcessor
                 {
                     var stopResult = MaaJobStatus.Succeeded;
 
-                    if (MaaTasker is { IsRunning: true, IsStopping: false } && status != MFATask.MFATaskStatus.FAILED && status != MFATask.MFATaskStatus.SUCCEEDED)
+                    try
                     {
-
-                        // 持续尝试停止直到返回 Succeeded
-                        const int maxRetries = 10;
-                        const int retryDelayMs = 500;
-
-                        for (int i = 0; i < maxRetries; i++)
+                        if (MaaTasker is { IsRunning: true, IsStopping: false } && status != MFATask.MFATaskStatus.FAILED && status != MFATask.MFATaskStatus.SUCCEEDED)
                         {
-                            LoggerHelper.Info($"正在尝试停止任务执行器，第 {i + 1} 次。");
-                            stopResult = AbortCurrentTasker();
-                            LoggerHelper.Info($"第 {i + 1} 次停止任务执行器返回：{stopResult}，准备重试。");
 
-                            if (stopResult == MaaJobStatus.Succeeded)
-                                break;
+                            // 持续尝试停止直到返回 Succeeded
+                            const int maxRetries = 10;
+                            const int retryDelayMs = 500;
 
-                            await Task.Delay(retryDelayMs);
+                            for (int i = 0; i < maxRetries; i++)
+                            {
+                                LoggerHelper.Info($"正在尝试停止任务执行器，第 {i + 1} 次。");
+                                stopResult = AbortCurrentTasker();
+                                LoggerHelper.Info($"第 {i + 1} 次停止任务执行器返回：{stopResult}，准备重试。");
+
+                                if (stopResult == MaaJobStatus.Succeeded)
+                                    break;
+
+                                await Task.Delay(retryDelayMs);
+                            }
                         }
-
                     }
+                    finally
+                    {
+                        if (status == MFATask.MFATaskStatus.STOPPED)
+                        {
+                            StopAgents();
+                        }
+                    }
+
                     HandleStopResult(status, stopResult, onlyStart, action, isUpdateRelated);
                     DispatcherHelper.PostOnMainThread(() =>
                     {
@@ -3786,6 +3801,13 @@ public class MaaProcessor
             AgentHelper.KillAllAgents(_agentContexts);
             _agentContexts = [];
         }
+    }
+
+    private void StopAgents()
+    {
+        _agentStarted = false;
+        AgentHelper.KillAllAgents(_agentContexts);
+        _agentContexts = [];
     }
 
     private bool ShouldProcessStop(bool finished)
