@@ -421,10 +421,28 @@ public class DragDropExtensions
             }
             else
             {
-                items.MoveTo(sourceIndex, targetIndex);
+                MoveItem(items, sourceIndex, targetIndex);
             }
         }
         ClearAdorner(listBox);
+    }
+
+    private static void MoveItem(IList items, int sourceIndex, int targetIndex)
+    {
+        var destinationIndex = targetIndex > sourceIndex
+            ? targetIndex - 1
+            : targetIndex;
+
+        if (destinationIndex == sourceIndex)
+            return;
+
+        if (items is ObservableCollection<Helper.ValueType.DragItemViewModel> taskItems)
+        {
+            taskItems.Move(sourceIndex, destinationIndex);
+            return;
+        }
+
+        items.MoveTo(sourceIndex, targetIndex);
     }
 
     /// <summary>
@@ -502,7 +520,7 @@ public class DragDropExtensions
 
         var beforePositions = CaptureItemPositions(listBox);
 
-        items.MoveTo(sourceIndex, targetIndex);
+        MoveItem(items, sourceIndex, targetIndex);
 
         listBox.UpdateLayout();
         Dispatcher.UIThread.RunJobs();

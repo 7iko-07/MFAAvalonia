@@ -488,16 +488,18 @@ public partial class TaskQueueView : UserControl
             if (vm.TaskItemViewModels.Count == 0)
                 return;
 
-            // 找到当前任务在列表中的位置
-            int currentTaskIndex = vm.TaskItemViewModels.IndexOf(currentTaskViewModel);
+            var orderedTasks = vm.GetTaskItemsInDisplayOrder();
+
+            // 找到当前任务在界面顺序中的位置
+            int currentTaskIndex = orderedTasks.IndexOf(currentTaskViewModel);
             // 若当前任务不在列表中，直接退出
             if (currentTaskIndex < 0)
                 return;
 
-            var currentTask = vm.TaskItemViewModels[currentTaskIndex];
+            var currentTask = orderedTasks[currentTaskIndex];
 
             // 当前任务始终执行；后续任务仍然要求已勾选且支持当前资源包/控制器。
-            var tasksToRun = vm.TaskItemViewModels
+            var tasksToRun = orderedTasks
                 .Skip(currentTaskIndex)
                 .Where(task => (ReferenceEquals(task, currentTask) || task.IsChecked) && task.IsTaskSupported)
                 .ToList(); // 转为列表（避免枚举多次）

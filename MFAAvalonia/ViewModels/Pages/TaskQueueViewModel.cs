@@ -40,6 +40,7 @@ public partial class TaskQueueViewModel : ViewModelBase
     private const string DefaultTaskGroupName = "__MFAUngroupedTasks__";
     private ObservableCollection<DragItemViewModel>? _subscribedTaskItems;
     private bool _rebuildingTaskGroups;
+    private bool _isApplyingGroupedTaskMove;
     public MaaProcessor Processor => _processorField;
 
     public TaskQueueViewModel() : this(MaaProcessorManager.Instance.Current.InstanceId)
@@ -443,7 +444,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         SubscribeTaskItemCollection(value);
         RebuildTaskItemGroups();
         if (ConfigurationManager.IsSwitching) return;
-        Processor.InstanceConfiguration.SetValue(ConfigurationKeys.TaskItems, value.Where(model => !model.IsResourceOptionItem).Select(model => model.InterfaceItem).ToList());
+        PersistTaskItemsInDisplayOrder();
     }
 
     private void SubscribeTaskItemCollection(ObservableCollection<DragItemViewModel>? value)
@@ -468,7 +469,37 @@ public partial class TaskQueueViewModel : ViewModelBase
 
     private void OnTaskItemsChangedForGrouping(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        RebuildTaskItemGroups();
+        if (!_isApplyingGroupedTaskMove)
+        {
+            RebuildTaskItemGroups();
+        }
+
+        if (e.Action == NotifyCollectionChangedAction.Move && !ConfigurationManager.IsSwitching)
+        {
+            PersistTaskItemsInDisplayOrder();
+        }
+    }
+
+    public List<DragItemViewModel> GetTaskItemsInDisplayOrder()
+    {
+        if (!HasTaskGroups || TaskItemGroups.Count == 0)
+        {
+            return TaskItemViewModels.ToList();
+        }
+
+        return TaskItemGroups
+            .SelectMany(group => group.Items)
+            .ToList();
+    }
+
+    private void PersistTaskItemsInDisplayOrder()
+    {
+        Processor.InstanceConfiguration.SetValue(
+            ConfigurationKeys.TaskItems,
+            GetTaskItemsInDisplayOrder()
+                .Where(model => !model.IsResourceOptionItem)
+                .Select(model => model.InterfaceItem)
+                .ToList());
     }
 
     public void RebuildTaskItemGroups()
@@ -571,7 +602,15 @@ public partial class TaskQueueViewModel : ViewModelBase
 
         if (targetIndex >= 0 && targetIndex < TaskItemViewModels.Count && targetIndex != sourceIndex)
         {
-            TaskItemViewModels.Move(sourceIndex, targetIndex);
+            _isApplyingGroupedTaskMove = true;
+            try
+            {
+                TaskItemViewModels.Move(sourceIndex, targetIndex);
+            }
+            finally
+            {
+                _isApplyingGroupedTaskMove = false;
+            }
         }
     }
 
@@ -2572,7 +2611,7 @@ public partial class TaskQueueViewModel : ViewModelBase
 
         instanceConfig.SetValue(
             ConfigurationKeys.TaskItems,
-            TaskItemViewModels
+            GetTaskItemsInDisplayOrder()
                 .Where(m => !m.IsResourceOptionItem)
                 .Select(m => m.InterfaceItem)
                 .ToList());

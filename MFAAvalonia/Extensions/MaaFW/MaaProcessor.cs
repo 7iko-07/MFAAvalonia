@@ -2844,7 +2844,7 @@ public class MaaProcessor
     {
         using var logScope = BeginInstanceLogScope("StartTask", "Worker");
         // 保存当前的任务列表，以便在重新加载时保留用户调整的顺序和 check 状态
-        var currentTasks = new Collection<DragItemViewModel>(ViewModel?.TaskItemViewModels.ToList() ?? new List<DragItemViewModel>());
+        var currentTasks = new Collection<DragItemViewModel>(ViewModel?.GetTaskItemsInDisplayOrder() ?? new List<DragItemViewModel>());
 
         if (InitializeData(currentTasks))
         {
