@@ -128,6 +128,7 @@ public partial class DragItemViewModel : ObservableObject
         {
             if (value != null)
             {
+                value.LocalId ??= Guid.NewGuid().ToString("N");
                 IsVisible = value is { Advanced.Count: > 0 } || value is { Option.Count: > 0 } || value.Repeatable == true || !string.IsNullOrWhiteSpace(value.Description) || value.Document is { Count: > 0 };
                 IsCheckedWithNull = value.Check;
             }
@@ -337,6 +338,7 @@ public partial class DragItemViewModel : ObservableObject
         {
             // 克隆普通任务项
             MaaInterface.MaaInterfaceTask? clonedInterfaceItem = InterfaceItem?.Clone();
+            if (clonedInterfaceItem != null) clonedInterfaceItem.LocalId = Guid.NewGuid().ToString("N");
             clone = new(clonedInterfaceItem) { OwnerViewModel = this.OwnerViewModel };
         }
 

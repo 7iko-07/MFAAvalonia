@@ -48,6 +48,7 @@ sealed class Program
             }
 
             LoggerHelper.InitializeLogger();
+            StartupDiagnostics.Mark("路径与日志初始化完成");
             Directory.SetCurrentDirectory(AppContext.BaseDirectory);
             PrivatePathHelper.CleanupDuplicateLibraries(AppContext.BaseDirectory, AppContext.GetData("SubdirectoriesToProbe") as string);
             PrivatePathHelper.SetupNativeLibraryResolver();
@@ -117,6 +118,7 @@ sealed class Program
             // 当主窗口关闭后，如果进程在指定时间内没有正常退出，则强制终止
             StartForceExitWatchdog();
 
+            StartupDiagnostics.Mark("运行时检查完成，开始初始化 Avalonia");
             BuildAvaloniaApp()
                 .StartWithClassicDesktopLifetime(args, ShutdownMode.OnMainWindowClose);
 

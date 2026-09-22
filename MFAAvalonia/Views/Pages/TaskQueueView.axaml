@@ -19,6 +19,7 @@
              xmlns:mdxaml="https://github.com/whistyun/Markdown.Avalonia"
              xmlns:pages="clr-namespace:MFAAvalonia.ViewModels.Pages"
              xmlns:suki="https://github.com/kikipoulet/SukiUI"
+             xmlns:sukiContent="clr-namespace:SukiUI.Content;assembly=SukiUI"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:behaviors="using:Avalonia.Xaml.Interactions.Core"
              xmlns:interaction="using:Avalonia.Xaml.Interactivity"
@@ -1124,6 +1125,11 @@
                                 Orientation="Horizontal"
                                 VerticalAlignment="Center"
                                 Spacing="8">
+                        <Button Classes="BasicTight" Command="{Binding AddTaskGroupCommand}"
+                                IsEnabled="{Binding Idle}"
+                                ToolTip.Tip="{markup:I18n TaskGroupNew}">
+                            <avalonia1:FluentIcon Icon="AddSquare" IconSize="Size16" IconVariant="Regular" />
+                        </Button>
                         <Button Classes="BasicTight TaskQueueBasicTight"
                                 ClipToBounds="False"
                                 Command="{Binding SelectAllCommand}"
@@ -1241,52 +1247,20 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="other:TaskItemGroupViewModel">
-                                    <Border Background="{DynamicResource SukiCardBackground}"
+                                    <Border IsVisible="{Binding ShowGroup}"
+                                            Background="{DynamicResource SukiCardBackground}"
                                             BorderBrush="{DynamicResource SukiBorderBrush}"
                                             BorderThickness="1"
                                             CornerRadius="8"
                                             Margin="0,0,0,2">
-                                        <Expander IsExpanded="{Binding IsExpanded}">
-                                            <Expander.Header>
-                                                <Grid ColumnDefinitions="Auto,*,Auto"
-                                                      ColumnSpacing="8"
-                                                      Margin="4,0">
-                                                    <controls:DisplayIcon Grid.Column="0"
-                                                                          IconSource="{Binding Icon}"
-                                                                          IconSize="18"
-                                                                          IsVisible="{Binding HasIcon}"
-                                                                          VerticalAlignment="Center" />
-                                                    <StackPanel Grid.Column="1"
-                                                                Orientation="Horizontal"
-                                                                Spacing="6"
-                                                                VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding Label}"
-                                                                   FontWeight="SemiBold"
-                                                                   FontSize="12"
-                                                                   TextTrimming="CharacterEllipsis"
-                                                                   VerticalAlignment="Center" />
-                                                        <controls:TooltipBlock TooltipText="{Binding Description}"
-                                                                               IsVisible="{Binding HasDescription}"
-                                                                               TooltipMaxWidth="320"
-                                                                               VerticalAlignment="Center" />
-                                                    </StackPanel>
-                                                    <TextBlock Grid.Column="2"
-                                                               Text="{Binding Items.Count}"
-                                                               Foreground="{DynamicResource SukiLowText}"
-                                                               FontSize="11"
-                                                               VerticalAlignment="Center" />
-                                                </Grid>
-                                            </Expander.Header>
-                                            <ListBox Classes="Fluent"
-                                                     ItemsSource="{Binding Items}"
+                                        <StackPanel>
+                                            <ListBox Classes="Fluent" IsVisible="{Binding IsUngrouped}"
+                                                     ItemsSource="{Binding Items}" MinHeight="40"
                                                      ItemTemplate="{StaticResource TaskQueueRowTemplate}"
-                                                     DragDrop.AllowDrop="{Binding Idle,Source={x:Static helper:Instances.RootViewModel}}"
+                                                     DragDrop.AllowDrop="{Binding CanEdit}"
                                                      extensions:DragDropExtensions.EnableDragDrop="True"
-                                                     extensions:DragDropExtensions.DragStartThreshold="2"
-                                                     extensions:DragDropExtensions.EnableAnimation="True"
                                                      SelectionChanged="SelectingItemsControl_OnSelectionChanged"
-                                                     KeyDown="TaskListBox_OnKeyDown"
-                                                     Margin="8,0,8,8">
+                                                     KeyDown="TaskListBox_OnKeyDown">
                                                 <ListBox.Styles>
                                                     <Style Selector="ListBoxItem">
                                                         <Setter Property="Padding" Value="8" />
@@ -1294,7 +1268,70 @@
                                                     </Style>
                                                 </ListBox.Styles>
                                             </ListBox>
-                                        </Expander>
+                                            <StackPanel IsVisible="{Binding !IsUngrouped}">
+                                                <!-- Match list margin (8), Suki item border padding (8), and item content padding (8). -->
+                                                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto"
+                                                      Margin="24,8,24,8" HorizontalAlignment="Stretch"
+                                                      Background="Transparent"
+                                                      PointerPressed="TaskGroupHeader_OnPointerPressed">
+                                                    <CheckBox Grid.Column="0" IsThreeState="True" MinWidth="0"
+                                                              Margin="0,0,8,0" HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center" IsEnabled="{Binding CanSelect}"
+                                                              IsChecked="{Binding SelectionState, Mode=OneWay}"
+                                                              Click="TaskGroupSelection_OnClick"
+                                                              ToolTip.Tip="{markup:I18n TaskGroupSelect}" />
+                                                    <TextBox Grid.Column="1" Text="{Binding Label, Mode=OneWay}"
+                                                             MinWidth="60" MaxWidth="160" Padding="0" BorderThickness="0"
+                                                             Background="Transparent" FontSize="12" FontWeight="Bold"
+                                                             IsReadOnly="{Binding !CanEdit}"
+                                                             LostFocus="TaskGroupName_OnLostFocus"
+                                                             KeyDown="TaskGroupName_OnKeyDown"
+                                                             ToolTip.Tip="{markup:I18n TaskGroupRename}">
+                                                        <TextBox.Styles>
+                                                            <Style Selector="TextBox /template/ Panel#PART_RootPanel">
+                                                                <Setter Property="Margin" Value="0" />
+                                                            </Style>
+                                                        </TextBox.Styles>
+                                                    </TextBox>
+                                                    <TextBlock Grid.Column="3" Text="{Binding Items.Count}" Margin="8,0,0,0"
+                                                               Foreground="{DynamicResource SukiLowText}" FontSize="11" FontWeight="Bold"
+                                                               VerticalAlignment="Center" />
+                                                    <ToggleButton Grid.Column="4" Classes="Basic" Margin="10,0,0,0"
+                                                                  Background="Transparent" BorderThickness="0"
+                                                                  IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                                                  ToolTip.Tip="{markup:I18n TaskGroupToggle}">
+                                                        <Panel>
+                                                            <avalonia1:FluentIcon Icon="ChevronDown" IconSize="Size16" IconVariant="Regular"
+                                                                      IsVisible="{Binding IsExpanded}" />
+                                                            <avalonia1:FluentIcon Icon="ChevronRight" IconSize="Size16" IconVariant="Regular"
+                                                                      IsVisible="{Binding !IsExpanded}" />
+                                                        </Panel>
+                                                    </ToggleButton>
+                                                    <Button Grid.Column="5" Classes="BasicTight" Margin="4,0,0,0"
+                                                            Command="{Binding DeleteCommand}" IsEnabled="{Binding CanEdit}"
+                                                            ToolTip.Tip="{markup:I18n TaskGroupDelete}">
+                                                            <avalonia1:FluentIcon Icon="Delete" IconSize="Size16" IconVariant="Regular" />
+                                                    </Button>
+                                                </Grid>
+                                                <ListBox Classes="Fluent" Padding="0" IsVisible="{Binding IsExpanded}"
+                                                         ItemsSource="{Binding Items}" MinHeight="40"
+                                                         ItemTemplate="{StaticResource TaskQueueRowTemplate}"
+                                                         DragDrop.AllowDrop="{Binding CanEdit}"
+                                                         extensions:DragDropExtensions.EnableDragDrop="True"
+                                                         extensions:DragDropExtensions.DragStartThreshold="2"
+                                                         extensions:DragDropExtensions.EnableAnimation="True"
+                                                         SelectionChanged="SelectingItemsControl_OnSelectionChanged"
+                                                         KeyDown="TaskListBox_OnKeyDown"
+                                                         Margin="8,0,8,8">
+                                                    <ListBox.Styles>
+                                                        <Style Selector="ListBoxItem">
+                                                            <Setter Property="Padding" Value="8" />
+                                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                        </Style>
+                                                    </ListBox.Styles>
+                                                </ListBox>
+                                            </StackPanel>
+                                        </StackPanel>
                                     </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

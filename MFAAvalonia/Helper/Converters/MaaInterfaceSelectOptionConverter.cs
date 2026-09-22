@@ -38,8 +38,8 @@ public class MaaInterfaceSelectOptionConverter(bool serializeAsStringArray) : Js
                     {
                         list.Add(new MaaInterface.MaaInterfaceSelectOption
                         {
-                            Name = item.ToString(),
-                            Index = 0
+                            // 名称引用不代表已选择第 0 项，保留空索引以应用 default_case。
+                            Name = item.ToString()
                         });
                     }
 
@@ -61,8 +61,8 @@ public class MaaInterfaceSelectOptionConverter(bool serializeAsStringArray) : Js
                 {
                     new()
                     {
-                        Name = oName ?? "",
-                        Index = 0
+                        // 与字符串数组一致，由默认值初始化逻辑确定选项索引。
+                        Name = oName ?? ""
                     }
                 };
             case JTokenType.None:

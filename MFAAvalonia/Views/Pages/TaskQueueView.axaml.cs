@@ -62,6 +62,51 @@ public partial class TaskQueueView : UserControl
         DataContextChanged += OnDataContextChanged;
     }
 
+    private void TaskGroupHeader_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Grid { DataContext: MFAAvalonia.ViewModels.Other.TaskItemGroupViewModel group } header
+            || !e.GetCurrentPoint(header).Properties.IsLeftButtonPressed)
+            return;
+
+        // Keep the name editor, checkbox and action buttons independently interactive.
+        for (var visual = e.Source as Visual; visual != null && visual != header; visual = visual.GetVisualParent())
+        {
+            if (visual is Button or TextBox)
+                return;
+        }
+
+        group.IsExpanded = !group.IsExpanded;
+        e.Handled = true;
+    }
+
+    private void TaskGroupSelection_OnClick(object? sender, RoutedEventArgs e)
+    {
+        // Own the tri-state cycle: partial -> all -> none, without the default null step.
+        if (sender is CheckBox { DataContext: MFAAvalonia.ViewModels.Other.TaskItemGroupViewModel group } box)
+        {
+            group.ToggleSelectionCommand.Execute(null);
+            box.SetCurrentValue(CheckBox.IsCheckedProperty, group.SelectionState);
+        }
+    }
+
+    private void TaskGroupName_OnLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox { DataContext: MFAAvalonia.ViewModels.Other.TaskItemGroupViewModel group } box)
+        {
+            group.Owner?.RenameTaskGroup(group, box.Text ?? string.Empty);
+            box.SetCurrentValue(TextBox.TextProperty, group.Label);
+        }
+    }
+
+    private void TaskGroupName_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            TaskGroupName_OnLostFocus(sender, e);
+            e.Handled = true;
+        }
+    }
+
     private void ConnectionStatusButton_OnClick(object? sender, RoutedEventArgs e)
     {
         NavigateToConnectSettings();

@@ -222,7 +222,7 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
 
         // Header（显示 option 名称和图标）
         var header = CreateOptionHeader(interfaceOption);
-        header.Margin = new Thickness(0); // 外层 container 已提供垂直间距，去掉 header 内部多余的上下 margin
+        header.Margin = new Thickness(10, 0, 0, 0); // 标题增加左边距，垂直间距由外层 container 提供
         container.Children.Add(header);
 
         // 初始化 SelectedCases（任务 9）
@@ -511,6 +511,7 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
 
         // Label Panel
         var labelPanel = CreateLabelPanel(input.DisplayName, input.Name, input.Description);
+        labelPanel.Margin = new Thickness(10, 0, 5, 0);
 
         // Icon (Show only if single input WITHOUT header, because header already has icon)
         if (!needsHeader)
@@ -664,6 +665,7 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
 
         // Label with Icon
         var labelPanel = CreateLabelPanel(option.DisplayName, option.Name, interfaceOption.Description, interfaceOption.Document);
+        labelPanel.Margin = new Thickness(10, 0, 0, 0);
         var icon = CreateIcon(interfaceOption);
         icon.Margin = new Thickness(10, 0, 6, 0); 
         labelPanel.Children.Insert(0, icon);
@@ -765,6 +767,7 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
         comboBox.Bind(ComboBoxExtensions.SearchWatermarkProperty, new I18nBinding(LangKeys.Search));
         // Header
         var labelPanel = CreateLabelPanel(option.DisplayName, option.Name, interfaceOption.Description, interfaceOption.Document);
+        labelPanel.Margin = new Thickness(10, 0, 0, 0);
         var icon = CreateIcon(interfaceOption);
         icon.Margin = new Thickness(10, 0, 6, 0); // Margin adjusted
         labelPanel.Children.Insert(0, icon);

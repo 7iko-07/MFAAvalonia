@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <AppBuildDir>$(MSBuildThisFileDirectory)../../bin/AnyCPU/Debug</AppBuildDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="MFAAvalonia.Core"><HintPath>$(AppBuildDir)/MFAAvalonia.Core.dll</HintPath></Reference>
+    <Reference Include="CommunityToolkit.Mvvm"><HintPath>$(AppBuildDir)/CommunityToolkit.Mvvm.dll</HintPath></Reference>
+    <Reference Include="Avalonia.Base"><HintPath>$(AppBuildDir)/Avalonia.Base.dll</HintPath></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(AppBuildDir)/Newtonsoft.Json.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

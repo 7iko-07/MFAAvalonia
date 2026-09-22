@@ -52,7 +52,7 @@
                                                PageContent="{extensions:ServiceProvider ServiceType={x:Type pages:InstanceContainerView}}" />
                         <suki:SukiSideMenuItem IsContentMovable="False"
                                                Header="{markup:I18n {x:Static helper:LangKeys.Monitor}}"
-                                               PageContent="{extensions:ServiceProvider ServiceType={x:Type pages:MonitorView}}">
+                                               PageContent="{extensions:ServiceProvider ServiceType={x:Type pages:MonitorView}, Deferred=True}">
                             <suki:SukiSideMenuItem.Icon>
                                 <PathIcon Data="{StaticResource AppsGeometry}" Width="16" Height="16" />
                             </suki:SukiSideMenuItem.Icon>
@@ -61,13 +61,13 @@
                                                Header="{markup:I18n {x:Static helper:LangKeys.ScreenshotPage}}"
                                                Icon="{fluent:FluentIcon Icon=Screenshot,
                                                                IconVariant=Regular}"
-                                               PageContent="{extensions:ServiceProvider ServiceType={x:Type pages:ScreenshotView}}" />
+                                               PageContent="{extensions:ServiceProvider ServiceType={x:Type pages:ScreenshotView}, Deferred=True}" />
                         <suki:SukiSideMenuItem IsContentMovable="False"
                                                Header="{markup:I18n {x:Static helper:LangKeys.ResourceOption}}"
                                                Icon="{fluent:FluentIcon Icon=Apps,
                                                                IconVariant=Regular}"
                                                IsVisible="False"
-                                               PageContent="{extensions:ServiceProvider ServiceType={x:Type pages:ResourcesView}}" />
+                                               PageContent="{extensions:ServiceProvider ServiceType={x:Type pages:ResourcesView}, Deferred=True}" />
                     </suki:SukiSideMenu.Items>
 
                     <suki:SukiSideMenu.HeaderContent>
@@ -129,7 +129,7 @@
                                                Header="{markup:I18n {x:Static helper:LangKeys.Settings}}"
                                                Icon="{fluent:FluentIcon Icon=Settings,
                                                                    IconVariant=Regular}"
-                                               PageContent="{extensions:ServiceProvider ServiceType={x:Type pages:SettingsView}}" />
+                                               PageContent="{extensions:ServiceProvider ServiceType={x:Type pages:SettingsView}, Deferred=True}" />
                     </suki:SukiSideMenu.FooterMenuItems>
                 </suki:SukiSideMenu>
             </Grid>

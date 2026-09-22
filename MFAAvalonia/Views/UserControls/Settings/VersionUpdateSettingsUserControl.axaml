@@ -83,7 +83,10 @@
         </suki:GlassCard>
         <suki:GlassCard Padding="25,15,25,15">
             <StackPanel Spacing="10">
-                <DockPanel IsVisible="False">
+                <TextBlock
+                    Text="{x:Static helper:VersionChecker.UiUpdateSource}"
+                    TextWrapping="Wrap" />
+                <DockPanel>
                     <ComboBox
                         DockPanel.Dock="Right"
                         ItemsSource="{Binding UIUpdateChannelList}"
@@ -295,7 +298,7 @@
         </suki:GlassCard>
         <suki:GlassCard Padding="25,15,25,15">
             <StackPanel Spacing="15">
-                <DockPanel IsVisible="False">
+                <DockPanel>
                     <Button
                         BorderBrush="Transparent"
                         BorderThickness="0"
@@ -339,7 +342,7 @@
                             VerticalAlignment="Center" />
                     </StackPanel>
                 </DockPanel>
-                <DockPanel IsVisible="False">
+                <DockPanel>
                     <Button
                         BorderBrush="Transparent"
                         BorderThickness="0"

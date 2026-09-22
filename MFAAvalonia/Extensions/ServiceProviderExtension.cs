@@ -1,6 +1,6 @@
 ﻿using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
-using MFAAvalonia.ViewModels.Pages;
+using MFAAvalonia.Controls;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 
@@ -9,6 +9,8 @@ namespace MFAAvalonia.Extensions;
 public class ServiceProviderExtension : MarkupExtension
 {
     public Type ServiceType { get; set; }
+
+    public bool Deferred { get; set; }
 
 
     // 关键修改：使用框架提供的 IServiceProvider，而非硬编码 App.Services
@@ -19,6 +21,15 @@ public class ServiceProviderExtension : MarkupExtension
         if (Design.IsDesignMode)
         {
             return CreateDesignTimeInstance(ServiceType);
+        }
+
+        if (Deferred)
+        {
+            var viewType = ServiceType;
+            if (!typeof(Control).IsAssignableFrom(viewType))
+                throw new InvalidOperationException($"延迟创建仅支持控件：{viewType.Name}");
+
+            return new DeferredView(() => (Control)App.Services.GetRequiredService(viewType));
         }
 
         return App.Services.GetRequiredService(ServiceType);

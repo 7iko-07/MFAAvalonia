@@ -2102,4 +2102,10 @@
   <data name="RemoveTimer" xml:space="preserve">
         <value>Remove Timer</value>
     </data>
+  <data name="TaskGroupNew" xml:space="preserve"><value>新しいグループ</value></data>
+  <data name="TaskGroupRename" xml:space="preserve"><value>グループ名を編集し、Enter で保存</value></data>
+  <data name="TaskGroupStart" xml:space="preserve"><value>グループ内の選択済みタスクを実行</value></data>
+  <data name="TaskGroupDelete" xml:space="preserve"><value>グループを削除し、タスクをグループ外に保持</value></data>
+  <data name="TaskGroupToggle" xml:space="preserve"><value>グループを展開・折りたたむ</value></data>
+  <data name="TaskGroupSelect" xml:space="preserve"><value>グループ内のタスクをすべて選択・解除</value></data>
 </root>

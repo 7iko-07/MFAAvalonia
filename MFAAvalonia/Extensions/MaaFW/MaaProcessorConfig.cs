@@ -22,7 +22,7 @@ public class DesktopWindowCoreConfig
     public nint HWnd { get; set; }
     public Win32InputMethod Mouse { get; set; } = Win32InputMethod.SendMessage;
     public Win32InputMethod KeyBoard { get; set; } = Win32InputMethod.SendMessage;
-    public Win32ScreencapMethod ScreenCap { get; set; } = Win32ScreencapMethod.FramePool;
+    public Win32ScreencapMethods ScreenCap { get; set; } = Win32ScreencapMethods.FramePool;
     public LinkOption Link { get; set; } = LinkOption.Start;
     public CheckStatusOption Check { get; set; } = CheckStatusOption.ThrowIfNotSucceeded;
 }

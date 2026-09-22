@@ -33,7 +33,9 @@ public partial class RootView : SukiWindow
         LoadWindowSizeAndPosition();
 
         // 初始化组件
+        StartupDiagnostics.Mark("主窗口组件初始化开始");
         InitializeComponent();
+        StartupDiagnostics.Mark("主窗口组件初始化完成");
 
         // 设置事件处理
         PropertyChanged += (_, e) =>
@@ -64,12 +66,6 @@ public partial class RootView : SukiWindow
                 LoadUI();
             });
         };
-        if (AppRuntime.IsNewInstance)
-        {
-            MaaProcessorManager.Instance.LoadInstanceConfig();
-            // 启动懒加载（LoadInstanceConfig 已加载 ActiveTab 实例）
-            _ = MaaProcessorManager.Instance.StartLazyLoadingAsync();
-        }
     }
 
 

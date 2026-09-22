@@ -11,7 +11,7 @@ namespace MFAAvalonia.Helper;
 
 /// <summary>
 /// 高性能内存清理器，针对 Avalonia 应用优化
-/// 使用后台线程阻塞式 GC 策略，确保清理效果同时避免 UI 卡顿
+/// 使用后台线程发起 GC；阻塞式 GC 仍可能暂停 UI 等托管线程。
 /// </summary>
 public class AvaloniaMemoryCracker : IDisposable
 {
@@ -318,10 +318,13 @@ public class AvaloniaMemoryCracker : IDisposable
     {
         _monitorTask = Task.Run(async () =>
         {
+            // 首次也等待正常清理间隔，避免在首屏构建时强制 GC / 裁剪工作集。
+            var nextInterval = intervalSeconds;
             while (!_cts.IsCancellationRequested)
             {
                 try
                 {
+                    await Task.Delay(TimeSpan.FromSeconds(nextInterval), _cts.Token);
                     var currentMemory = GetCurrentMemoryUsage();
                     var memoryInfo = GetMemoryPressureInfo();
 
@@ -345,8 +348,7 @@ public class AvaloniaMemoryCracker : IDisposable
                     }
 
                     // 自适应清理间隔：内存压力越大，间隔越短
-                    var adaptiveInterval = CalculateAdaptiveInterval(intervalSeconds, memoryInfo);
-                    await Task.Delay(TimeSpan.FromSeconds(adaptiveInterval), _cts.Token);
+                    nextInterval = CalculateAdaptiveInterval(intervalSeconds, memoryInfo);
                 }
                 catch (OperationCanceledException)
                 {
@@ -355,7 +357,7 @@ public class AvaloniaMemoryCracker : IDisposable
                 catch (Exception ex)
                 {
                     LoggerHelper.Warning($"[内存管理]内存清理异常: {ex.Message}"); // 发生异常时使用默认间隔
-                    await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), _cts.Token).ConfigureAwait(false);
+                    nextInterval = intervalSeconds;
                 }
             }
         }, _cts.Token);

@@ -2095,6 +2095,12 @@
   <data name="InstanceDropdownJustNow" xml:space="preserve">
     <value>剛剛</value>
   </data>
+  <data name="TaskGroupNew" xml:space="preserve"><value>新增分組</value></data>
+  <data name="TaskGroupRename" xml:space="preserve"><value>編輯分組名稱，按 Enter 儲存</value></data>
+  <data name="TaskGroupStart" xml:space="preserve"><value>啟動此組已勾選的任務</value></data>
+  <data name="TaskGroupDelete" xml:space="preserve"><value>刪除分組，保留並平鋪任務</value></data>
+  <data name="TaskGroupToggle" xml:space="preserve"><value>展開或摺疊分組</value></data>
+  <data name="TaskGroupSelect" xml:space="preserve"><value>全選或取消全選組內任務</value></data>
 </root>
 
 

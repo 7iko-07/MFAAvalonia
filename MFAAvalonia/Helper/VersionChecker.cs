@@ -48,6 +48,11 @@ namespace MFAAvalonia.Helper;
 #pragma warning  disable CS4014 // 由于此调用不会等待，因此在此调用完成之前将会继续执行当前方法。
 public static class VersionChecker
 {
+    // 定制 UI 只从维护者仓库更新；资源下载源不能将其切回官方 UI。
+    private const string UiUpdateOwner = "7iko-07";
+    private const string UiUpdateRepository = "MFAAvalonia";
+    public const string UiUpdateSource = "GitHub · " + UiUpdateOwner + "/" + UiUpdateRepository;
+
     private static bool shouldShowToast = false;
     private const string ResourceUpdateDebugEnv = "MFA_DEBUG_UPDATE_RESOURCE";
     private const string ResourceUpdateDryRunEnv = "MFA_DEBUG_UPDATE_RESOURCE_DRY_RUN";
@@ -195,13 +200,13 @@ public static class VersionChecker
     }
 
     public static void CheckCDKAsync() => TaskManager.RunTaskAsync(() => CheckForCDK(Instances.VersionUpdateSettingsUserControlModel.DownloadSourceIndex == 0), name: "查询CDK剩余时间");
-    public static void CheckMFAVersionAsync() => TaskManager.RunTaskAsync(async () => await CheckForMFAUpdatesAsync(Instances.VersionUpdateSettingsUserControlModel.DownloadSourceIndex == 0), name: "检测MFA版本");
+    public static void CheckMFAVersionAsync() => TaskManager.RunTaskAsync(async () => await CheckForMFAUpdatesAsync(), name: "检测MFA版本");
     public static void CheckResourceVersionAsync() => TaskManager.RunTaskAsync(async () => await CheckForResourceUpdatesAsync(Instances.VersionUpdateSettingsUserControlModel.DownloadSourceIndex == 0), name: "检测资源版本");
     public static void UpdateResourceAsync(string
         currentVersion = "") => TaskManager.RunTaskAsync(() => UpdateResource(Instances.VersionUpdateSettingsUserControlModel.DownloadSourceIndex == 0, currentVersion: currentVersion), name: "更新MFA");
     public static void UpdateResourceFromLocalPackageAsync(string packagePath, string currentVersion = "") =>
         TaskManager.RunTaskAsync(() => UpdateResource(false, currentVersion: currentVersion, localPackagePath: packagePath), name: "本地更新包更新");
-    public static void UpdateMFAAsync() => TaskManager.RunTaskAsync(() => UpdateMFA(Instances.VersionUpdateSettingsUserControlModel.DownloadSourceIndex == 0), name: "更新资源");
+    public static void UpdateMFAAsync() => TaskManager.RunTaskAsync(() => UpdateMFA(), name: "更新MFA");
 
     public static void UpdateMaaFwAsync() => TaskManager.RunTaskAsync(() => UpdateMaaFw(), name: "更新MaaFw");
 
@@ -218,7 +223,7 @@ public static class VersionChecker
     {
         Queue.Enqueue(new ValueType.MFATask
         {
-            Action = async () => await CheckForMFAUpdatesAsync(Instances.VersionUpdateSettingsUserControlModel.DownloadSourceIndex == 0),
+            Action = async () => await CheckForMFAUpdatesAsync(),
             Name = "更新软件"
         });
     }
@@ -246,7 +251,7 @@ public static class VersionChecker
         Queue.Enqueue(new ValueType.MFATask
         {
 
-            Action = async () => UpdateMFA(Instances.VersionUpdateSettingsUserControlModel.DownloadSourceIndex == 0),
+            Action = async () => await UpdateMFA(),
             Name = "更新软件"
         });
     }
@@ -364,33 +369,19 @@ public static class VersionChecker
         }
     }
 
-    public static async Task CheckForMFAUpdatesAsync(bool isGithub = true)
+    public static async Task CheckForMFAUpdatesAsync()
     {
         try
         {
             Instances.RootViewModel.SetUpdating(true);
             var localVersion = GetLocalVersion();
-            string latestVersion = string.Empty;
-            string sha256 = string.Empty;
-            if (isGithub)
-            {
-                var result = await GetLatestVersionAndDownloadUrlFromGithubAsync().ConfigureAwait(false);
-                latestVersion = result.latestVersion;
-                sha256 = result.sha256;
-            }
-            else
-                GetDownloadUrlFromMirror(localVersion, "MFAAvalonia", CDK(), out _, out latestVersion, out sha256, out _, isUI: true, onlyCheck: true);
-            var mirrocS = false;
+            var result = await GetLatestUiVersionAndDownloadUrlAsync().ConfigureAwait(false);
+            var latestVersion = result.latestVersion;
             if (IsNewVersionAvailable(latestVersion, GetMaxVersion()))
             {
                 latestVersion = GetMaxVersion();
-                if (!isGithub) mirrocS = true;
             }
-            if (mirrocS)
-            {
-                ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.SwitchUiUpdateSourceToGithub.ToLocalization());
-            }
-            else if (IsNewVersionAvailable(latestVersion, localVersion))
+            if (IsNewVersionAvailable(latestVersion, localVersion))
             {
                 DispatcherHelper.PostOnMainThread(() =>
                 {
@@ -415,12 +406,9 @@ public static class VersionChecker
         }
         catch (Exception ex)
         {
-            if (ex.Message.Contains("resource not found"))
-                ToastHelper.Error(LangKeys.CurrentResourcesNotSupportMirror.ToLocalization());
-            else
-                ToastHelper.Error(LangKeys.ErrorWhenCheck.ToLocalizationFormatted(false, "MFA"), ex.Message);
+            ToastHelper.Error(LangKeys.ErrorWhenCheck.ToLocalizationFormatted(false, "MFA"), ex.Message);
             Instances.RootViewModel.SetUpdating(false);
-            LoggerHelper.Error($"检查 MFA 更新失败：来源={(isGithub ? "GitHub" : "Mirror")}，原因={ex.Message}", ex);
+            LoggerHelper.Error($"检查 MFA 更新失败：来源={UiUpdateSource}，原因={ex.Message}", ex);
         }
     }
 
@@ -1470,7 +1458,7 @@ public static class VersionChecker
         }
     }
 
-    public async static Task UpdateMFA(bool isGithub, bool noDialog = false)
+    public async static Task UpdateMFA()
     {
         Instances.RootViewModel.SetUpdating(true);
         ProgressBar? progress = null;
@@ -1509,54 +1497,35 @@ public static class VersionChecker
             string downloadUrl, latestVersion, sha256;
             try
             {
-                if (isGithub)
-                {
-                    var result = await GetLatestVersionAndDownloadUrlFromGithubAsync().ConfigureAwait(false);
-                    downloadUrl = result.url;
-                    latestVersion = result.latestVersion;
-                    sha256 = result.sha256;
-                }
-                else
-                    GetDownloadUrlFromMirror(GetLocalVersion(), "MFAAvalonia", CDK(), out downloadUrl, out latestVersion, out sha256, out _, isUI: true);
+                var result = await GetLatestUiVersionAndDownloadUrlAsync().ConfigureAwait(false);
+                downloadUrl = result.url;
+                latestVersion = result.latestVersion;
+                sha256 = result.sha256;
             }
             catch (Exception ex)
             {
                 Dismiss(sukiToast);
                 ToastHelper.Warn($"{LangKeys.FailToGetLatestVersionInfo.ToLocalization()}", ex.Message);
-                LoggerHelper.Error($"获取 MFA 下载信息失败：source={(isGithub ? "GitHub" : "Mirror")}, reason={ex.Message}", ex);
+                LoggerHelper.Error($"获取 MFA 下载信息失败：来源={UiUpdateSource}，原因={ex.Message}", ex);
                 Instances.RootViewModel.SetUpdating(false);
                 return;
             }
 
             // 版本验证
             SetProgress(progress, 50);
-            var mirrocS = false;
             if (IsNewVersionAvailable(latestVersion, GetMaxVersion()))
             {
                 latestVersion = GetMaxVersion();
-                if (isGithub)
-                {
-                    var result = await GetLatestVersionAndDownloadUrlFromGithubAsync(targetVersion: latestVersion).ConfigureAwait(false);
-                    downloadUrl = result.url;
-                    sha256 = result.sha256;
-                }
-                else
-                {
-                    mirrocS = true;
-                }
+                var result = await GetLatestUiVersionAndDownloadUrlAsync(targetVersion: latestVersion).ConfigureAwait(false);
+                downloadUrl = result.url;
+                latestVersion = result.latestVersion;
+                sha256 = result.sha256;
             }
 
             if (!IsNewVersionAvailable(latestVersion, GetLocalVersion()))
             {
                 Dismiss(sukiToast);
                 ToastHelper.Info(LangKeys.MFAIsLatestVersion.ToLocalization());
-                Instances.RootViewModel.SetUpdating(false);
-                return;
-            }
-            else if (mirrocS)
-            {
-                Dismiss(sukiToast);
-                ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.SwitchUiUpdateSourceToGithub.ToLocalization());
                 Instances.RootViewModel.SetUpdating(false);
                 return;
             }
@@ -2002,14 +1971,22 @@ public static class VersionChecker
     }
 
 
+    private static Task<(string url, string latestVersion, string sha256)> GetLatestUiVersionAndDownloadUrlAsync(string targetVersion = "")
+    {
+        LoggerHelper.Info($"获取定制 UI 更新：来源={UiUpdateSource}，目标版本={targetVersion}");
+        return GetLatestVersionAndDownloadUrlFromGithubAsync(
+            UiUpdateOwner, UiUpdateRepository, targetVersion: targetVersion, isUI: true);
+    }
+
     public static async Task<(string url, string latestVersion, string sha256)> GetLatestVersionAndDownloadUrlFromGithubAsync(
-        string owner = "MaaXYZ",
-        string repo = "MFAAvalonia",
+        string owner,
+        string repo,
         bool onlyCheck = false,
         string targetVersion = "",
-        string currentVersion = "v0.0.0")
+        string currentVersion = "v0.0.0",
+        bool isUI = false)
     {
-        var versionType = repo.Equals("MFAAvalonia", StringComparison.OrdinalIgnoreCase)
+        var versionType = isUI
             ? Instances.VersionUpdateSettingsUserControlModel.UIUpdateChannelIndex.ToVersionType()
             : Instances.VersionUpdateSettingsUserControlModel.ResourceUpdateChannelIndex.ToVersionType();
         string url = string.Empty;
@@ -2083,9 +2060,9 @@ public static class VersionChecker
                             latestVersion = tagVersion;
                             if (IsNewVersionAvailable(latestVersion, currentVersion))
                             {
-                                if (onlyCheck && repo != "MFAAvalonia")
+                                if (onlyCheck && !isUI)
                                     SaveRelease(tag, "body");
-                                if (!onlyCheck && repo != "MFAAvalonia")
+                                if (!onlyCheck && !isUI)
                                     SaveChangelog(tag, "body");
                             }
                             (url, sha256) = await GetDownloadUrlFromGitHubReleaseAsync(latestVersion, owner, repo).ConfigureAwait(false);
@@ -2128,9 +2105,9 @@ public static class VersionChecker
             latestVersion = bestVersion;
             if (IsNewVersionAvailable(latestVersion, currentVersion))
             {
-                if (onlyCheck && repo != "MFAAvalonia")
+                if (onlyCheck && !isUI)
                     SaveRelease(bestRelease, "body");
-                if (!onlyCheck && repo != "MFAAvalonia")
+                if (!onlyCheck && !isUI)
                     SaveChangelog(bestRelease, "body");
             }
             (url, sha256) = await GetDownloadUrlFromGitHubReleaseAsync(latestVersion, owner, repo).ConfigureAwait(false);

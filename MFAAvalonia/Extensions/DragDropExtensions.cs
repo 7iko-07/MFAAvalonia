@@ -14,6 +14,8 @@ using Avalonia.VisualTree;
 using AvaloniaEdit.Utils;
 using MFAAvalonia.Helper;
 using MFAAvalonia.ViewModels.Pages;
+using MFAAvalonia.ViewModels.Other;
+using MFAAvalonia.Helper.ValueType;
 using MFAAvalonia.Views.UserControls;
 using Microsoft.VisualBasic;
 using SukiUI;
@@ -330,9 +332,13 @@ public class DragDropExtensions
         SetPressedPosition(listBox, null);
     }
 
-    private static void OnPointerMoved(object? sender, PointerEventArgs e)
+    private static ListBox? _dragSource;
+    private static object? _dragItem;
+    private static string? _dragToken;
+
+    private static async void OnPointerMoved(object? sender, PointerEventArgs e)
     {
-        if (sender is not ListBox listBox || !e.GetCurrentPoint(listBox).Properties.IsLeftButtonPressed)
+        if (_dragSource != null || sender is not ListBox listBox || !DragDrop.GetAllowDrop(listBox) || !e.GetCurrentPoint(listBox).Properties.IsLeftButtonPressed)
             return;
 
         var pressedPosition = GetPressedPosition(listBox);
@@ -369,61 +375,66 @@ public class DragDropExtensions
         var data = new DataTransfer();
         var item = new DataTransferItem();
         listBox.SelectedIndex = Math.Clamp(sourceItem, 0, listBox.Items.Count - 1);
-        item.SetText(sourceItem.ToString());
+        _dragSource = listBox;
+        _dragItem = listBox.Items[sourceItem];
+        _dragToken = Guid.NewGuid().ToString("N");
+        item.SetText(_dragToken);
         data.Add(item);
 
-        DragDrop.DoDragDropAsync(e, data, DragDropEffects.Move);
+        try { await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Move); }
+        finally
+        {
+            _dragSource = null;
+            _dragItem = null;
+            _dragToken = null;
+            ClearDragState(listBox);
+            ClearAdorner(listBox);
+        }
+    }
+
+    private static bool TryGetTaskDrop(ListBox target, DragEventArgs e, out IList items, out int sourceIndex, out int targetIndex)
+    {
+        items = target.ItemsSource as IList ?? Array.Empty<object>();
+        sourceIndex = -1;
+        targetIndex = -1;
+        if (_dragSource?.ItemsSource is not IList source || _dragItem == null ||
+            !DragDrop.GetAllowDrop(target) || !e.DataTransfer.TryGetText(out var token) || token != _dragToken)
+            return false;
+        sourceIndex = source.IndexOf(_dragItem);
+        targetIndex = items.Count == 0 ? 0 : GetTargetIndex(target, e.GetPosition(target));
+        if (sourceIndex < 0 || targetIndex < 0 || targetIndex > items.Count) return false;
+        if (_dragItem is DragItemViewModel { IsResourceOptionItem: true }) return false;
+        if (targetIndex == 0 && items.Count > 0 && items[0] is DragItemViewModel { IsResourceOptionItem: true }) return false;
+        if (target.DataContext is TaskItemGroupViewModel targetGroup)
+            return _dragSource.DataContext is TaskItemGroupViewModel sourceGroup &&
+                targetGroup.Owner != null && targetGroup.Owner == sourceGroup.Owner && targetGroup.CanEdit;
+        return ReferenceEquals(target, _dragSource);
     }
 
     private static void OnDragOver(object? sender, DragEventArgs e)
     {
-        if (sender is not ListBox listBox || listBox.ItemsSource is not IList items || !e.DataTransfer.TryGetText(out string sourceIndexStr) || !int.TryParse(sourceIndexStr, out int sourceIndex))
-            return;
-        var position = e.GetPosition(listBox);
-        var targetIndex = GetTargetIndex(listBox, position);
-
-        if (targetIndex == -1 || sourceIndex == -1) return;
-
-        // 检查拖放操作是否有效
-        if (!IsValidDragDropOperation(items, sourceIndex, targetIndex))
-        {
-            e.DragEffects = DragDropEffects.None;
-            e.Handled = true;
-            ClearAdorner(listBox);
-            return;
-        }
-
-        UpdateAdorner(listBox, targetIndex, items.Count);
-
-        e.DragEffects = DragDropEffects.Move;
+        if (sender is not ListBox listBox) return;
+        var valid = TryGetTaskDrop(listBox, e, out var items, out _, out var targetIndex);
+        e.DragEffects = valid ? DragDropEffects.Move : DragDropEffects.None;
         e.Handled = true;
+        if (valid && items.Count > 0) UpdateAdorner(listBox, targetIndex, items.Count);
+        else ClearAdorner(listBox);
     }
 
     private static void OnDrop(object? sender, DragEventArgs e)
     {
-        if (sender is not ListBox listBox || listBox.ItemsSource is not IList items || !e.DataTransfer.TryGetText(out string sourceIndexStr) || !int.TryParse(sourceIndexStr, out int sourceIndex))
-            return;
-        var position = e.GetPosition(listBox);
-        var targetIndex = GetTargetIndex(listBox, position);
-
-        // 检查是否涉及资源预设配置项
-        if (!IsValidDragDropOperation(items, sourceIndex, targetIndex))
+        if (sender is not ListBox listBox) return;
+        if (TryGetTaskDrop(listBox, e, out var items, out var sourceIndex, out var targetIndex))
         {
-            ClearAdorner(listBox);
-            return;
-        }
-
-        if (sourceIndex >= 0 && targetIndex >= 0 && sourceIndex != targetIndex)
-        {
-            if (GetEnableAnimation(listBox))
+            if (listBox.DataContext is TaskItemGroupViewModel group && _dragItem is DragItemViewModel task)
+                group.Owner?.MoveTaskToGroup(task, group, targetIndex);
+            else if (sourceIndex != targetIndex)
             {
-                MoveWithAnimation(listBox, items, sourceIndex, targetIndex);
-            }
-            else
-            {
-                MoveItem(items, sourceIndex, targetIndex);
+                if (GetEnableAnimation(listBox)) MoveWithAnimation(listBox, items, sourceIndex, targetIndex);
+                else MoveItem(items, sourceIndex, targetIndex);
             }
         }
+        e.Handled = true;
         ClearAdorner(listBox);
     }
 
@@ -444,26 +455,6 @@ public class DragDropExtensions
 
         items.MoveTo(sourceIndex, targetIndex);
     }
-
-    /// <summary>
-    /// 检查拖放操作是否有效（资源预设配置项不能被移动，也不能移动到资源预设配置项的位置）
-    /// </summary>
-    private static bool IsValidDragDropOperation(IList items, int sourceIndex, int targetIndex)
-    {
-        if (sourceIndex < 0 || targetIndex < 0 || sourceIndex >= items.Count)
-            return false;
-
-        // 检查源项是否是资源预设配置项
-        if (items[sourceIndex] is Helper.ValueType.DragItemViewModel sourceItem && sourceItem.IsResourceOptionItem)
-            return false;
-
-        // 检查第一个项是否是资源预设配置项，如果是，则不允许移动到第一个位置
-        if (targetIndex == 0 && items.Count > 0 && items[0] is Helper.ValueType.DragItemViewModel firstItem && firstItem.IsResourceOptionItem)
-            return false;
-
-        return true;
-    }
-
 
     async private static Task AnimateItemMovement(ListBoxItem item, double startY, double endY, double duration = 400)
     {

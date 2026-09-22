@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Notifications;
+using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using MFAAvalonia.Configuration;
@@ -134,7 +135,9 @@ public partial class App : Application
             AppPaths.CleanupObsoleteExecutableBackups(
                 message => LoggerHelper.Info(message),
                 message => LoggerHelper.Warning(message));
+            StartupDiagnostics.Mark("应用资源加载开始");
             AvaloniaXamlLoader.Load(this);
+            StartupDiagnostics.Mark("应用资源加载完成");
             LanguageHelper.Initialize();
             ConfigurationManager.Initialize();
             SystemSleepHelper.ApplyPreventSleep();
@@ -148,6 +151,7 @@ public partial class App : Application
             TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException; //Task线程内未捕获异常处理事件
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException; //非UI线程内未捕获异常处理事件
             Dispatcher.UIThread.UnhandledException += OnDispatcherUnhandledException; //UI线程内未捕获异常处理事件
+            StartupDiagnostics.Mark("应用基础服务初始化完成");
         }
         catch (Exception ex)
         {
@@ -194,14 +198,15 @@ public partial class App : Application
 
                 Services = services.BuildServiceProvider();
 
+                StartupDiagnostics.Mark("活动实例加载开始");
                 MaaProcessorManager.Instance.LoadInstanceConfig();
-
-                // 启动懒加载：先加载 ActiveTab，再加载有定时任务的，最后加载其余
-                _ = MaaProcessorManager.Instance.StartLazyLoadingAsync();
+                StartupDiagnostics.Mark("活动实例加载完成");
 
                 DataTemplates.Add(new ViewLocator(views));
 
                 var window = views.CreateView<RootViewModel>(Services) as Window;
+                if (window != null) window.Loaded += OnRootViewLoaded;
+                StartupDiagnostics.Mark("主窗口创建完成");
 
                 desktop.MainWindow = window;
 
@@ -237,12 +242,10 @@ public partial class App : Application
 
                 MaaProcessorManager.Instance.LoadInstanceConfig();
 
-                // 启动懒加载
-                _ = MaaProcessorManager.Instance.StartLazyLoadingAsync();
-
                 DataTemplates.Add(new ViewLocator(views));
 
                 var mainView = views.CreateView<RootViewModel>(Services);
+                mainView.Loaded += OnRootViewLoaded;
 
                 singleView.MainView = mainView;
 
@@ -269,6 +272,35 @@ public partial class App : Application
         {
             LoggerHelper.Error($"框架初始化失败：原因={ex.Message}", ex);
             ShowStartupErrorAndExit(ex, "框架初始化");
+        }
+    }
+
+    private void OnRootViewLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control view) view.Loaded -= OnRootViewLoaded;
+        StartupDiagnostics.Mark("主视图 Loaded");
+
+        // 先让首屏布局/渲染工作执行，再加载有定时任务和其余实例。
+        // 不放到 Task.Run：实例集合与 ViewModel 仍需在 UI 线程更新。
+        Dispatcher.UIThread.Post(InitializeDeferredStartup, DispatcherPriority.Background);
+    }
+
+    private async void InitializeDeferredStartup()
+    {
+        try
+        {
+            // 设置页按需创建，但快捷键注册不能依赖用户打开设置页。
+            _ = Instances.SettingsViewModel;
+            var instanceLoading = MaaProcessorManager.Instance.StartLazyLoadingAsync();
+            // Interface 早于设置模型加载时会跳过这些内容，模型就绪后补载。
+            var metadataLoading = MaaProcessor.Interface is { } maaInterface
+                ? MaaProcessor.LoadContactAndDescriptionAsync(maaInterface)
+                : Task.CompletedTask;
+            await Task.WhenAll(instanceLoading, metadataLoading);
+        }
+        catch (Exception ex)
+        {
+            LoggerHelper.Error($"启动后延迟初始化失败：原因={ex.Message}", ex);
         }
     }
 

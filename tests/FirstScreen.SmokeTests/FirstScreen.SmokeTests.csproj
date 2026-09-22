@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AppBuildDir>$(MSBuildThisFileDirectory)../../bin/AnyCPU/Debug</AppBuildDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Avalonia.Base"><HintPath>$(AppBuildDir)/Avalonia.Base.dll</HintPath></Reference>
+    <Reference Include="Avalonia.Controls"><HintPath>$(AppBuildDir)/Avalonia.Controls.dll</HintPath></Reference>
+    <Reference Include="Avalonia.Markup"><HintPath>$(AppBuildDir)/Avalonia.Markup.dll</HintPath></Reference>
+    <Reference Include="Avalonia.Markup.Xaml"><HintPath>$(AppBuildDir)/Avalonia.Markup.Xaml.dll</HintPath></Reference>
+    <Reference Include="Microsoft.Extensions.DependencyInjection.Abstractions"><HintPath>$(AppBuildDir)/Microsoft.Extensions.DependencyInjection.Abstractions.dll</HintPath></Reference>
+    <Compile Include="../../MFAAvalonia/Controls/DeferredView.cs" Link="DeferredView.cs" />
+    <Compile Include="../../MFAAvalonia/Extensions/ServiceProviderExtension.cs" Link="ServiceProviderExtension.cs" />
+  </ItemGroup>
+</Project>

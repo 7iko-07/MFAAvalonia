@@ -513,6 +513,7 @@ public class MaaProcessor
     public void Dispose()
     {
         _isClosed = true;
+        DisposeScreenshotTasker();
         _detachedScreenshotCleanupCancellationTokenSource?.Cancel();
         _detachedScreenshotCleanupCancellationTokenSource?.Dispose();
         lock (_detachedScreenshotTaskersLock)
@@ -594,7 +595,7 @@ public class MaaProcessor
     /// <summary>
     /// 异步加载 Contact 和 Description 内容
     /// </summary>
-    async private static Task LoadContactAndDescriptionAsync(MaaInterface maaInterface)
+    internal static async Task LoadContactAndDescriptionAsync(MaaInterface maaInterface)
     {
         var projectDir = AppPaths.DataRoot;
 
@@ -646,8 +647,10 @@ public class MaaProcessor
     }
 
     public MaaTasker? MaaTasker { get; set; }
-    private MaaTasker? _screenshotTasker;
-    private Task<MaaTasker?>? _screenshotTaskerInitTask;
+    private readonly BackgroundResource<MaaTasker> _screenshotTaskerCache = new(
+        ReleaseScreenshotTasker,
+        ex => LoggerHelper.Warning($"截图任务执行器预热失败：{ex.Message}"));
+    private MaaTasker? _screenshotTasker => _screenshotTaskerCache.Value;
     private readonly Lock _screenshotTaskerInitLock = new();
     private sealed class DetachedScreenshotTaskerRecord
     {
@@ -715,11 +718,10 @@ public class MaaProcessor
 
     private void DetachScreenshotTasker()
     {
-        var screenshotTasker = _screenshotTasker;
-        _screenshotTasker = null;
+        MaaTasker? screenshotTasker;
         lock (_screenshotTaskerInitLock)
         {
-            _screenshotTaskerInitTask = null;
+            screenshotTasker = _screenshotTaskerCache.Reset();
         }
 
         if (screenshotTasker == null)
@@ -884,7 +886,7 @@ public class MaaProcessor
                 // Ensure screenshot tasker is recreated from this processor's latest connection context.
                 DetachScreenshotTasker();
                 ResetScreencapFailureLogFlags();
-                await PrewarmScreenshotTaskerAsync(token);
+                StartScreenshotTaskerPrewarm(token);
             }
         }
 
@@ -906,45 +908,21 @@ public class MaaProcessor
             // Ensure screenshot tasker is recreated from this processor's latest connection context.
             DetachScreenshotTasker();
             ResetScreencapFailureLogFlags();
-            await PrewarmScreenshotTaskerAsync(token);
+            StartScreenshotTaskerPrewarm(token);
         }
 
         return (MaaTasker, tuple.Item2, tuple.Item3);
     }
 
-    private async Task PrewarmScreenshotTaskerAsync(CancellationToken token)
+    private void StartScreenshotTaskerPrewarm(CancellationToken token)
     {
-        if (!UseSeparateScreenshotTasker || _isClosed || MaaTasker == null || _screenshotTasker != null)
-            return;
-
-        Task<MaaTasker?> initTask;
         lock (_screenshotTaskerInitLock)
         {
-            _screenshotTaskerInitTask ??= InitializeScreenshotTaskerAsync(token);
-            initTask = _screenshotTaskerInitTask;
-        }
+            if (!UseSeparateScreenshotTasker || _isClosed || MaaTasker == null || token.IsCancellationRequested)
+                return;
 
-        MaaTasker? tasker = null;
-        try
-        {
-            tasker = await initTask;
-        }
-        catch (OperationCanceledException)
-        {
-            // Keep main tasker usable even if screenshot prewarm gets canceled.
-        }
-        catch (Exception ex)
-        {
-            LoggerHelper.Warning($"截图任务执行器预热失败：{ex.Message}");
-        }
-
-        lock (_screenshotTaskerInitLock)
-        {
-            if (_screenshotTasker == null)
-            {
-                _screenshotTasker = tasker;
-            }
-            _screenshotTaskerInitTask = null;
+            // First screenshot requests share this task; main connection readiness does not wait for it.
+            _ = _screenshotTaskerCache.GetOrCreateAsync(InitializeScreenshotTaskerAsync, token);
         }
     }
 
@@ -964,29 +942,16 @@ public class MaaProcessor
             DisposeScreenshotTasker();
         }
 
-        if (_screenshotTasker == null && !_isClosed)
+        Task<MaaTasker?> initTask;
+        lock (_screenshotTaskerInitLock)
         {
-            Task<MaaTasker?> initTask;
-            lock (_screenshotTaskerInitLock)
-            {
-                _screenshotTaskerInitTask ??= InitializeScreenshotTaskerAsync(token);
-                initTask = _screenshotTaskerInitTask;
-            }
-
-            initTask.Wait(token);
-            var tasker = initTask.Result;
-
-            lock (_screenshotTaskerInitLock)
-            {
-                if (_screenshotTasker == null)
-                {
-                    _screenshotTasker = tasker;
-                }
-                _screenshotTaskerInitTask = null;
-            }
+            if (_isClosed)
+                return null;
+            initTask = _screenshotTaskerCache.GetOrCreateAsync(InitializeScreenshotTaskerAsync, token);
         }
 
-        return _screenshotTasker;
+        initTask.Wait(token);
+        return initTask.GetAwaiter().GetResult();
     }
 
     private bool ShouldRecreateScreenshotTasker()
@@ -1020,16 +985,17 @@ public class MaaProcessor
 
     private void DisposeScreenshotTasker()
     {
-        if (_screenshotTasker == null)
-            return;
-
-        var screenshotTasker = _screenshotTasker;
-        _screenshotTasker = null;
+        MaaTasker? screenshotTasker;
         lock (_screenshotTaskerInitLock)
         {
-            _screenshotTaskerInitTask = null;
+            screenshotTasker = _screenshotTaskerCache.Reset();
         }
+        if (screenshotTasker != null)
+            ReleaseScreenshotTasker(screenshotTasker);
+    }
 
+    private static void ReleaseScreenshotTasker(MaaTasker screenshotTasker)
+    {
         try
         {
             if (screenshotTasker.IsRunning && !screenshotTasker.IsStopping)
@@ -1294,7 +1260,7 @@ public class MaaProcessor
         try
         {
             token.ThrowIfCancellationRequested();
-            var linkStatus = controller.LinkStart().Wait();
+            var linkStatus = EnsureControllerConnected(controller, token);
             if (linkStatus != MaaJobStatus.Succeeded)
             {
                 controller.Dispose();
@@ -1310,22 +1276,21 @@ public class MaaProcessor
         }
     }
 
-    private async Task<MaaTasker?> InitializeScreenshotTaskerAsync(CancellationToken token)
+    private Task<MaaTasker?> InitializeScreenshotTaskerAsync(CancellationToken token)
     {
-        if (!UseSeparateScreenshotTasker)
-            return MaaTasker;
+        // This factory runs only through BackgroundResource, on a worker thread.
+        // Never return the shared main tasker: stale results are owned and disposed by the cache.
+        if (!UseSeparateScreenshotTasker || _isClosed || Design.IsDesignMode)
+            return Task.FromResult<MaaTasker?>(null);
 
-        if (Design.IsDesignMode)
-            return null;
-
+        var stopwatch = Stopwatch.StartNew();
         MaaResource? maaResource = null;
+        MaaController? controller = null;
+        MaaTasker? tasker = null;
+        var ownershipTransferred = false;
         try
         {
-            // var currentResource = ViewModel?.CurrentResources
-            //     .FirstOrDefault(c => c.Name == ViewModel?.CurrentResource);
-            // var resources = currentResource?.ResolvedPath ?? currentResource?.Path ?? [];
-            // resources = resources.Select(Path.GetFullPath).ToList();
-
+            token.ThrowIfCancellationRequested();
             var resources = new List<string>();
             var controllerType = ViewModel?.CurrentController ?? MaaControllerTypes.Adb;
             var controllerName = controllerType.ToJsonKey();
@@ -1341,30 +1306,11 @@ public class MaaProcessor
                 }
             }
 
-            maaResource = await TaskManager.RunTaskAsync(() =>
-            {
-                token.ThrowIfCancellationRequested();
-                if (resources.Count > 0)
-                {
-                    return new MaaResource(resources);
-                }
-                return new MaaResource();
-            }, token: token, name: "截图资源检测", catchException: true, shouldLog: false, noMessage: true);
-        }
-        catch (Exception ex)
-        {
-            LoggerHelper.Warning($"截图任务资源初始化失败：{ex.Message}");
-            return null;
-        }
-
-        MaaController controller = null;
-        try
-        {
-            controller = await TaskManager.RunTaskAsync(() =>
-            {
-                token.ThrowIfCancellationRequested();
-                return InitializeController(ViewModel?.CurrentController ?? MaaControllerTypes.Adb, logConfig: false);
-            }, token: token, name: "截图控制器检测", catchException: true, shouldLog: false, noMessage: true);
+            maaResource = resources.Count > 0 ? new MaaResource(resources) : new MaaResource();
+            token.ThrowIfCancellationRequested();
+            controller = InitializeController(controllerType, logConfig: false);
+            if (controller == null)
+                return Task.FromResult<MaaTasker?>(null);
 
             var displayShortSide = Interface?.Controller?.Find(c => c.Type != null && c.Type.Equals(ViewModel?.CurrentController.ToJsonKey(), StringComparison.OrdinalIgnoreCase))?.DisplayShortSide;
             var displayLongSide = Interface?.Controller?.Find(c => c.Type != null && c.Type.Equals(ViewModel?.CurrentController.ToJsonKey(), StringComparison.OrdinalIgnoreCase))?.DisplayLongSide;
@@ -1376,41 +1322,52 @@ public class MaaProcessor
                 controller.SetOption_ScreenshotTargetShortSide(Convert.ToInt32(displayShortSide.Value));
             if (displayRaw != null && displayShortSide == null && displayLongSide == null)
                 controller.SetOption_ScreenshotUseRawSize(displayRaw.Value);
-        }
-        catch (Exception ex)
-        {
-            LoggerHelper.Warning($"截图任务控制器初始化失败：{ex.Message}");
-            return null;
-        }
-
-        try
-        {
             token.ThrowIfCancellationRequested();
 
-            var tasker = new MaaTasker
+            // Keep child ownership here until initialization succeeds.
+            tasker = new MaaTasker
             {
+                DisposeOptions = DisposeOptions.None,
                 Controller = controller,
-                Resource = maaResource,
-                Toolkit = MaaProcessor.Toolkit,
-                Global = MaaProcessor.Global,
-                DisposeOptions = DisposeOptions.All,
+                Resource = maaResource
             };
+            tasker.Toolkit = Toolkit;
+            tasker.Global = Global;
 
-            // ConfigureScreenshotTasker(tasker);
-
-            var linkStatus = tasker.Controller?.LinkStart().Wait();
+            var linkStatus = EnsureControllerConnected(tasker.Controller, token);
             if (linkStatus != MaaJobStatus.Succeeded)
-            {
-                tasker.Dispose();
-                return null;
-            }
+                return Task.FromResult<MaaTasker?>(null);
 
-            return tasker;
+            token.ThrowIfCancellationRequested();
+            tasker.DisposeOptions = DisposeOptions.All;
+            LoggerHelper.Info($"[连接耗时] 独立截图执行器就绪：{stopwatch.ElapsedMilliseconds}ms");
+            ownershipTransferred = true;
+            return Task.FromResult<MaaTasker?>(tasker);
+        }
+        catch (OperationCanceledException)
+        {
+            return Task.FromResult<MaaTasker?>(null);
         }
         catch (Exception ex)
         {
             LoggerHelper.Warning($"截图任务执行器初始化失败：{ex.Message}");
-            return null;
+            return Task.FromResult<MaaTasker?>(null);
+        }
+        finally
+        {
+            if (!ownershipTransferred)
+            {
+                // Until success, child ownership remains here, including cancellation between allocations.
+                if (tasker != null)
+                {
+                    tasker.DisposeOptions = DisposeOptions.None;
+                    ReleaseScreenshotTasker(tasker);
+                }
+                try { controller?.Dispose(); }
+                catch (Exception ex) { LoggerHelper.Warning($"释放未完成的截图控制器失败：{ex.Message}"); }
+                try { maaResource?.Dispose(); }
+                catch (Exception ex) { LoggerHelper.Warning($"释放未完成的截图资源失败：{ex.Message}"); }
+            }
         }
     }
 
@@ -1425,6 +1382,7 @@ public class MaaProcessor
 
     async private Task<(MaaTasker?, bool, bool)> InitializeMaaTasker(CancellationToken token) // 添加 async 和 token
     {
+        var stopwatch = Stopwatch.StartNew();
         var InvalidResource = false;
         var ShouldRetry = true;
         AutoInitDictionary.Clear();
@@ -1561,7 +1519,7 @@ public class MaaProcessor
             // 尝试连接控制器，验证连接是否成功
             // 这对于 Win32 控制器特别重要，因为当 HWnd 为 IntPtr.Zero 时，
             // MaaWin32Controller 创建成功但LinkStart 会失败
-            var linkStatus = tasker.Controller?.LinkStart().Wait();
+            var linkStatus = EnsureControllerConnected(tasker.Controller, token);
             if (linkStatus != MaaJobStatus.Succeeded)
             {
                 LoggerHelper.Warning($"控制器 LinkStart 失败：状态={linkStatus}");
@@ -1640,6 +1598,7 @@ public class MaaProcessor
             // 注意：只订阅一次回调，避免嵌套订阅导致内存泄漏
             tasker.Callback += HandleCallBack;
             ResetScreencapFailureLogFlags();
+            LoggerHelper.Info($"[连接耗时] 主执行器与 Agent 就绪：{stopwatch.ElapsedMilliseconds}ms（独立截图在后台预热）");
             return (tasker, InvalidResource, ShouldRetry);
         }
         catch (OperationCanceledException)
@@ -2546,11 +2505,11 @@ public class MaaProcessor
         }
     }
 
-    private Win32ScreencapMethod ConfigureWin32ScreenCapTypes()
+    private Win32ScreencapMethods ConfigureWin32ScreenCapTypes()
     {
         return InstanceConfiguration.GetValue(ConfigurationKeys.Win32ControlScreenCapType,
-            Win32ScreencapMethod.FramePool, Win32ScreencapMethod.None,
-            new UniversalEnumConverter<Win32ScreencapMethod>());
+            Win32ScreencapMethods.FramePool, Win32ScreencapMethods.None,
+            new UniversalEnumConverter<Win32ScreencapMethods>());
     }
 
     private Win32InputMethod ConfigureWin32MouseInputTypes()
@@ -2807,16 +2766,25 @@ public class MaaProcessor
         ProcessHelper.HardRestartAdb(Config.AdbDevice.AdbPath);
     }
     
+    private static MaaJobStatus EnsureControllerConnected(IMaaController? controller, CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+        if (controller == null)
+            return MaaJobStatus.Invalid;
+
+        // Maa controller constructors can already establish the connection. Repeating
+        // LinkStart tears down the monitor and reruns input/screenshot initialization.
+        return controller.IsConnected ? MaaJobStatus.Succeeded : controller.LinkStart().Wait();
+    }
+
     public async Task TestConnecting()
     {
         if (Interlocked.CompareExchange(ref _isConnecting, 1, 0) != 0)
             return;
         try
         {
-            await GetTaskerAsync();
-            var task = MaaTasker?.Controller?.LinkStart();
-            task?.Wait();
-            ViewModel?.SetConnected(task?.Status == MaaJobStatus.Succeeded);
+            var tasker = await GetTaskerAsync();
+            ViewModel?.SetConnected(EnsureControllerConnected(tasker?.Controller) == MaaJobStatus.Succeeded);
         }
         finally
         {

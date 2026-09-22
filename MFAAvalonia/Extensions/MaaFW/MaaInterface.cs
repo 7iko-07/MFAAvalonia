@@ -619,6 +619,9 @@ public partial class MaaInterface
         /// <summary>任务备注（仅配置文件使用，不影响接口定义）</summary>
         [JsonProperty("remark")] public string? Remark;
 
+        // Stable identity for per-profile layout, including repeated copies of the same task.
+        [JsonProperty("local_id")] public string? LocalId;
+
         /// <summary>任务入口，为 pipeline 中 Task 的名称</summary>
         [JsonProperty("entry")] public string? Entry;
 

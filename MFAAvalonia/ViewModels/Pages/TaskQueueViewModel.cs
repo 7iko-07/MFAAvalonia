@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Collections;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -41,6 +41,7 @@ public partial class TaskQueueViewModel : ViewModelBase
     private ObservableCollection<DragItemViewModel>? _subscribedTaskItems;
     private bool _rebuildingTaskGroups;
     private bool _isApplyingGroupedTaskMove;
+    private bool _taskOrderSyncPending;
     public MaaProcessor Processor => _processorField;
 
     public TaskQueueViewModel() : this(MaaProcessorManager.Instance.Current.InstanceId)
@@ -70,6 +71,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         _processorField.TaskQueue.CountChanged += OnTaskQueueCountChanged;
         LanguageHelper.LanguageChanged += OnLanguageChanged;
         SubscribeTaskItemCollection(TaskItemViewModels);
+        ConfigurationManager.ConfigurationSwitched += OnTaskGroupConfigurationSwitched;
 
         // Re-initialize with the correct processor since base constructor might have used Current
         Initialize();
@@ -469,10 +471,19 @@ public partial class TaskQueueViewModel : ViewModelBase
 
     private void OnTaskItemsChangedForGrouping(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (!_isApplyingGroupedTaskMove)
+        if (_isApplyingGroupedTaskMove) return;
+        if (e.Action == NotifyCollectionChangedAction.Move && !ConfigurationManager.IsSwitching)
         {
-            RebuildTaskItemGroups();
+            // Capture a flat-list reorder before rebuilding from the saved layout.
+            var layout = ReadTaskGroupLayout();
+            layout.TaskOrder = TaskItemViewModels.Where(item => item.InterfaceItem?.LocalId != null)
+                .Select(item => item.InterfaceItem!.LocalId!).ToList();
+            SaveTaskGroupLayout(layout);
         }
+        // Rebuild the projection immediately, but never mutate the source collection
+        // while it is still notifying its subscribers (including the bound view).
+        RebuildTaskItemGroups(synchronizeTaskOrder: false);
+        ScheduleTaskItemOrderSynchronization();
 
         if (e.Action == NotifyCollectionChangedAction.Move && !ConfigurationManager.IsSwitching)
         {
@@ -502,70 +513,117 @@ public partial class TaskQueueViewModel : ViewModelBase
                 .ToList());
     }
 
-    public void RebuildTaskItemGroups()
+    public void RebuildTaskItemGroups() => RebuildTaskItemGroups(synchronizeTaskOrder: true);
+
+    private void RebuildTaskItemGroups(bool synchronizeTaskOrder)
     {
         _rebuildingTaskGroups = true;
         try
         {
-        var tasks = TaskItemViewModels.ToList();
-        var interfaceGroups = MaaProcessor.Interface?.Group?
-            .Where(group => !string.IsNullOrWhiteSpace(group.Name))
-            .ToList() ?? [];
-        var hasTaskGroupNames = tasks.Any(item =>
-            item.InterfaceItem?.Group?.Any(groupName => !string.IsNullOrWhiteSpace(groupName)) == true);
-        var expandedStates = TaskItemGroups
-            .ToDictionary(group => group.Name, group => group.IsExpanded, StringComparer.Ordinal);
+            var tasks = TaskItemViewModels.ToList();
+            var interfaceGroups = MaaProcessor.Interface?.Group?
+                .Where(group => !string.IsNullOrWhiteSpace(group.Name))
+                .ToList() ?? [];
+            var expandedStates = TaskItemGroups
+                .ToDictionary(group => group.Name, group => group.IsExpanded, StringComparer.Ordinal);
 
-        HasTaskGroups = interfaceGroups.Count > 0 || hasTaskGroupNames;
-        TaskItemGroups.Clear();
-
-        if (!HasTaskGroups)
-        {
-            return;
-        }
-
-        var groupsByName = new Dictionary<string, TaskItemGroupViewModel>(StringComparer.Ordinal);
-        var orderedGroups = new List<TaskItemGroupViewModel>();
-
-        foreach (var interfaceGroup in interfaceGroups)
-        {
-            var group = CreateTaskItemGroup(interfaceGroup);
-            if (expandedStates.TryGetValue(group.Name, out var isExpanded))
+            var layout = ReadTaskGroupLayout();
+            foreach (var oldGroup in TaskItemGroups)
             {
-                group.IsExpanded = isExpanded;
+                oldGroup.Items.CollectionChanged -= OnGroupedTaskItemsChanged;
+                oldGroup.Dispose();
             }
-            groupsByName[group.Name] = group;
-            orderedGroups.Add(group);
-        }
+            TaskItemGroups.Clear();
 
-        var defaultGroup = GetOrCreateTaskItemGroup(groupsByName, orderedGroups, DefaultTaskGroupName, LangKeys.CommonSetting.ToLocalization(), isExpanded: true);
+            var order = layout.TaskOrder.Select((id, index) => (id, index))
+                .GroupBy(entry => entry.id).ToDictionary(entries => entries.Key, entries => entries.First().index);
+            tasks = tasks.OrderBy(item => item.IsResourceOptionItem ? -1 :
+                item.InterfaceItem?.LocalId is { } id && order.TryGetValue(id, out var index) ? index : int.MaxValue).ToList();
 
-        foreach (var item in tasks)
-        {
-            var groupName = item.InterfaceItem?.Group?
-                .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+            var groupsByName = new Dictionary<string, TaskItemGroupViewModel>(StringComparer.Ordinal);
+            var orderedGroups = new List<TaskItemGroupViewModel>();
 
-            var group = string.IsNullOrWhiteSpace(groupName)
-                ? defaultGroup
-                : GetOrCreateTaskItemGroup(groupsByName, orderedGroups, groupName!, groupName!, isExpanded: true);
-            if (expandedStates.TryGetValue(group.Name, out var isExpanded))
+            foreach (var interfaceGroup in interfaceGroups)
             {
-                group.IsExpanded = isExpanded;
+                if (layout.DeletedGroups.Contains(interfaceGroup.Name!)) continue;
+                var group = CreateTaskItemGroup(interfaceGroup);
+                if (expandedStates.TryGetValue(group.Name, out var isExpanded))
+                {
+                    group.IsExpanded = isExpanded;
+                }
+                groupsByName[group.Name] = group;
+                orderedGroups.Add(group);
             }
 
-            group.Items.Add(item);
-        }
+            foreach (var savedGroup in layout.Groups)
+            {
+                var saved = GetOrCreateTaskItemGroup(groupsByName, orderedGroups, savedGroup.Name, savedGroup.Label, true);
+                saved.Label = savedGroup.Label;
+            }
+            var defaultGroup = GetOrCreateTaskItemGroup(groupsByName, orderedGroups, DefaultTaskGroupName, LangKeys.CommonSetting.ToLocalization(), isExpanded: true);
 
-        foreach (var group in orderedGroups.Where(group => group.Items.Count > 0))
-        {
-            group.Items.CollectionChanged += OnGroupedTaskItemsChanged;
-            TaskItemGroups.Add(group);
-        }
+            foreach (var item in tasks)
+            {
+                var groupName = item.InterfaceItem?.LocalId is { } id && layout.TaskGroups.TryGetValue(id, out var customGroup)
+                    ? customGroup : item.InterfaceItem?.Group?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+                if (item.IsResourceOptionItem || (groupName != null && layout.DeletedGroups.Contains(groupName)))
+                    groupName = null;
+
+                var group = string.IsNullOrWhiteSpace(groupName)
+                    ? defaultGroup
+                    : GetOrCreateTaskItemGroup(groupsByName, orderedGroups, groupName!, groupName!, isExpanded: true);
+                if (expandedStates.TryGetValue(group.Name, out var isExpanded))
+                {
+                    group.IsExpanded = isExpanded;
+                }
+
+                group.Items.Add(item);
+            }
+
+            orderedGroups.Remove(defaultGroup);
+            orderedGroups.Insert(0, defaultGroup);
+            HasTaskGroups = orderedGroups.Count > 1;
+            foreach (var group in orderedGroups)
+            {
+                group.Attach(this, group == defaultGroup);
+                group.Items.CollectionChanged += OnGroupedTaskItemsChanged;
+                TaskItemGroups.Add(group);
+            }
+            if (synchronizeTaskOrder)
+                SynchronizeTaskItemOrder();
         }
         finally
         {
             _rebuildingTaskGroups = false;
         }
+    }
+
+    private void ScheduleTaskItemOrderSynchronization()
+    {
+        if (_taskOrderSyncPending) return;
+        _taskOrderSyncPending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _taskOrderSyncPending = false;
+            // Read the current projection: tasks or the entire collection may have
+            // changed again since this callback was queued.
+            SynchronizeTaskItemOrder();
+        });
+    }
+
+    private void SynchronizeTaskItemOrder()
+    {
+        _isApplyingGroupedTaskMove = true;
+        try
+        {
+            var ordered = TaskItemGroups.SelectMany(group => group.Items).ToList();
+            for (var i = 0; i < ordered.Count; i++)
+            {
+                var currentIndex = TaskItemViewModels.IndexOf(ordered[i]);
+                if (currentIndex != i) TaskItemViewModels.Move(currentIndex, i);
+            }
+        }
+        finally { _isApplyingGroupedTaskMove = false; }
     }
 
     private void OnGroupedTaskItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -612,6 +670,8 @@ public partial class TaskQueueViewModel : ViewModelBase
                 _isApplyingGroupedTaskMove = false;
             }
         }
+        PersistTaskItemsInDisplayOrder();
+        PersistTaskGroupOrder();
     }
 
     private static TaskItemGroupViewModel CreateTaskItemGroup(MaaInterface.MaaInterfaceTaskGroup interfaceGroup)
@@ -1178,6 +1238,7 @@ public partial class TaskQueueViewModel : ViewModelBase
     private void ResetTasks()
     {
         using var _ = BeginUiLogScope("ResetTasks");
+        ResetTaskGroupLayout();
         // 保留特殊任务（倒计时、系统通知等用户手动添加的自定义 Action 任务）
         var specialTasks = TaskItemViewModels
             .Where(t => !string.IsNullOrWhiteSpace(t.InterfaceItem?.Entry)
@@ -1209,7 +1270,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         UpdateTasksForResource(CurrentResource);
 
         // 保存配置
-        Processor.InstanceConfiguration.SetValue(ConfigurationKeys.TaskItems, TaskItemViewModels.ToList().Select(model => model.InterfaceItem));
+        Processor.InstanceConfiguration.SetValue(ConfigurationKeys.TaskItems, TaskItemViewModels.Where(model => !model.IsResourceOptionItem).Select(model => model.InterfaceItem).ToList());
         LoggerHelper.UserAction("重置任务列表", $"taskCount={TaskItemViewModels.Count}",
             operation: "ResetTasks", instanceId: Processor.InstanceId, instanceName: InstanceName);
     }
@@ -2252,16 +2313,16 @@ public partial class TaskQueueViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// 解析 Win32ScreencapMethod，支持旧版 long 格式和新版 string 格式
+    /// 解析 Win32ScreencapMethods，支持旧版 long 格式和新版 string 格式
     /// </summary>
-    private static Win32ScreencapMethod? ParseWin32ScreencapMethod(object? value)
+    private static Win32ScreencapMethods? ParseWin32ScreencapMethod(object? value)
     {
         if (value == null) return null;
 
         // 新版 string 格式（枚举名）
         if (value is string strValue)
         {
-            if (Enum.TryParse<Win32ScreencapMethod>(strValue, ignoreCase: true, out var result))
+            if (Enum.TryParse<Win32ScreencapMethods>(strValue, ignoreCase: true, out var result))
                 return result;
             return null;
         }
@@ -2270,12 +2331,12 @@ public partial class TaskQueueViewModel : ViewModelBase
         var longValue = Convert.ToInt64(value);
         return longValue switch
         {
-            1 => Win32ScreencapMethod.GDI,
-            2 => Win32ScreencapMethod.FramePool,
-            4 => Win32ScreencapMethod.DXGI_DesktopDup,
-            8 => Win32ScreencapMethod.DXGI_DesktopDup_Window,
-            16 => Win32ScreencapMethod.PrintWindow,
-            32 => Win32ScreencapMethod.ScreenDC,
+            1 => Win32ScreencapMethods.GDI,
+            2 => Win32ScreencapMethods.FramePool,
+            4 => Win32ScreencapMethods.DXGI_DesktopDup,
+            8 => Win32ScreencapMethods.DXGI_DesktopDup_Window,
+            16 => Win32ScreencapMethods.PrintWindow,
+            32 => Win32ScreencapMethods.ScreenDC,
             _ => null
         };
     }
