@@ -432,6 +432,18 @@ public partial class TaskQueueView : UserControl
         }
     }
 
+    private void MoveTaskToTop(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { DataContext: DragItemViewModel task } && DataContext is TaskQueueViewModel vm)
+            vm.MoveTaskToTop(task);
+    }
+
+    private void MoveTaskToBottom(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { DataContext: DragItemViewModel task } && DataContext is TaskQueueViewModel vm)
+            vm.MoveTaskToBottom(task);
+    }
+
     private void EditTaskRemark(object? sender, RoutedEventArgs e)
     {
         var menuItem = sender as MenuItem;
@@ -659,20 +671,18 @@ public partial class TaskQueueView : UserControl
     {
         var isResourceOptionItem = currentItem?.IsResourceOptionItem == true;
         var canRunNow = !isResourceOptionItem && Instances.RootViewModel.Idle;
-        var canEdit = !isResourceOptionItem;
+        var canEdit = currentItem != null && !isResourceOptionItem;
+        var canMove = canEdit && currentItem?.OwnerViewModel?.Idle == true;
 
-        // 仅统计 MenuItem（不包含 Separator），顺序固定：
-        // 0 单独运行, 1 运行当前及后续勾选, 2 复制, 3 粘贴, 4 备注, 5 删除
-        var items = menu.Items?.OfType<MenuItem>().ToList();
-        if (items is not { Count: >= 6 })
-            return;
-
-        items[0].IsEnabled = canRunNow;
-        items[1].IsEnabled = canRunNow;
-        items[2].IsEnabled = canEdit;
-        items[3].IsEnabled = canEdit;
-        items[4].IsEnabled = canEdit;
-        items[5].IsEnabled = canEdit;
+        foreach (var item in menu.Items.OfType<MenuItem>())
+        {
+            item.IsEnabled = item.Name switch
+            {
+                "TaskMenuRunSingle" or "TaskMenuRunCheckedFromCurrent" => canRunNow,
+                "TaskMenuMoveToTop" or "TaskMenuMoveToBottom" => canMove,
+                _ => canEdit
+            };
+        }
     }
 
     #endregion

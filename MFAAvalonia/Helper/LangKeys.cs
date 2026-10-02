@@ -346,6 +346,8 @@ public static class LangKeys
 	public static readonly string TaskAddedToast = "TaskAddedToast";
 	public static readonly string TaskDeletedToast = "TaskDeletedToast";
 	public static readonly string TaskRemarkMenu = "TaskRemarkMenu";
+	public static readonly string TaskMoveToTop = "TaskMoveToTop";
+	public static readonly string TaskMoveToBottom = "TaskMoveToBottom";
 	public static readonly string TaskRemarkTitle = "TaskRemarkTitle";
 	public static readonly string TaskRename = "TaskRename";
 	public static readonly string TaskRenamePlaceholder = "TaskRenamePlaceholder";

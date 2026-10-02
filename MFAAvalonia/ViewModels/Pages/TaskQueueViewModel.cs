@@ -476,6 +476,9 @@ public partial class TaskQueueViewModel : ViewModelBase
         {
             // Capture a flat-list reorder before rebuilding from the saved layout.
             var layout = ReadTaskGroupLayout();
+            // A flat-list drag changes the saved position; it must not leave the task at the bottom.
+            if (!HasTaskGroups && e.NewItems?[0] is DragItemViewModel moved && moved.InterfaceItem?.LocalId is { } movedId)
+                layout.BottomTasks.Remove(movedId);
             layout.TaskOrder = TaskItemViewModels.Where(item => item.InterfaceItem?.LocalId != null)
                 .Select(item => item.InterfaceItem!.LocalId!).ToList();
             SaveTaskGroupLayout(layout);
@@ -524,8 +527,8 @@ public partial class TaskQueueViewModel : ViewModelBase
             var interfaceGroups = MaaProcessor.Interface?.Group?
                 .Where(group => !string.IsNullOrWhiteSpace(group.Name))
                 .ToList() ?? [];
-            var expandedStates = TaskItemGroups
-                .ToDictionary(group => group.Name, group => group.IsExpanded, StringComparer.Ordinal);
+            var expandedStates = TaskItemGroups.GroupBy(group => group.Name, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First().IsExpanded, StringComparer.Ordinal);
 
             var layout = ReadTaskGroupLayout();
             foreach (var oldGroup in TaskItemGroups)
@@ -560,8 +563,9 @@ public partial class TaskQueueViewModel : ViewModelBase
                 var saved = GetOrCreateTaskItemGroup(groupsByName, orderedGroups, savedGroup.Name, savedGroup.Label, true);
                 saved.Label = savedGroup.Label;
             }
-            var defaultGroup = GetOrCreateTaskItemGroup(groupsByName, orderedGroups, DefaultTaskGroupName, LangKeys.CommonSetting.ToLocalization(), isExpanded: true);
-
+            // Project consecutive runs instead of gathering every task with the same
+            // group name. Group declarations supply metadata, not task positions.
+            var segments = new List<TaskItemGroupViewModel>();
             foreach (var item in tasks)
             {
                 var groupName = item.InterfaceItem?.LocalId is { } id && layout.TaskGroups.TryGetValue(id, out var customGroup)
@@ -569,25 +573,44 @@ public partial class TaskQueueViewModel : ViewModelBase
                 if (item.IsResourceOptionItem || (groupName != null && layout.DeletedGroups.Contains(groupName)))
                     groupName = null;
 
-                var group = string.IsNullOrWhiteSpace(groupName)
-                    ? defaultGroup
-                    : GetOrCreateTaskItemGroup(groupsByName, orderedGroups, groupName!, groupName!, isExpanded: true);
-                if (expandedStates.TryGetValue(group.Name, out var isExpanded))
+                groupName = string.IsNullOrWhiteSpace(groupName) ? DefaultTaskGroupName : groupName;
+                if (!item.IsResourceOptionItem && item.InterfaceItem?.LocalId is { } bottomId && layout.BottomTasks.Contains(bottomId))
+                    groupName = DefaultTaskGroupName;
+                var group = segments.LastOrDefault();
+                if (group == null || group.Name != groupName ||
+                    group.Items[^1].IsResourceOptionItem && !item.IsResourceOptionItem)
                 {
-                    group.IsExpanded = isExpanded;
+                    var definition = groupName == DefaultTaskGroupName ? null :
+                        GetOrCreateTaskItemGroup(groupsByName, orderedGroups, groupName, groupName, isExpanded: true);
+                    group = new TaskItemGroupViewModel
+                    {
+                        Name = groupName,
+                        Label = definition?.Label ?? string.Empty,
+                        Description = definition?.Description ?? string.Empty,
+                        HasDescription = definition?.HasDescription ?? false,
+                        Icon = definition?.Icon ?? string.Empty,
+                        HasIcon = definition?.HasIcon ?? false,
+                        IsExpanded = expandedStates.TryGetValue(groupName, out var expanded)
+                            ? expanded : definition?.IsExpanded ?? true,
+                    };
+                    segments.Add(group);
                 }
-
                 group.Items.Add(item);
             }
 
-            orderedGroups.Remove(defaultGroup);
-            orderedGroups.Insert(0, defaultGroup);
-            HasTaskGroups = orderedGroups.Count > 1;
-            foreach (var group in orderedGroups)
+            // Keep empty groups available for drops without displacing any tasks.
+            var occupiedGroups = segments.Select(group => group.Name).ToHashSet(StringComparer.Ordinal);
+            var emptyGroups = orderedGroups.Where(group => !occupiedGroups.Contains(group.Name)).ToList();
+            var emptyIndex = segments.Count > 0 && segments[^1].Name == DefaultTaskGroupName &&
+                !segments[^1].Items.All(item => item.IsResourceOptionItem)
+                ? segments.Count - 1 : segments.Count;
+            segments.InsertRange(emptyIndex, emptyGroups);
+            HasTaskGroups = segments.Any(group => group.Name != DefaultTaskGroupName);
+            foreach (var group in segments) TaskItemGroups.Add(group);
+            foreach (var group in segments)
             {
-                group.Attach(this, group == defaultGroup);
+                group.Attach(this, group.Name == DefaultTaskGroupName);
                 group.Items.CollectionChanged += OnGroupedTaskItemsChanged;
-                TaskItemGroups.Add(group);
             }
             if (synchronizeTaskOrder)
                 SynchronizeTaskItemOrder();

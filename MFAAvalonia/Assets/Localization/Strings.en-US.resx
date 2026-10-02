@@ -2113,6 +2113,8 @@ Please do not copy only the main executable by itself.</value>
   <data name="TaskGroupDelete" xml:space="preserve"><value>Delete group and keep tasks ungrouped</value></data>
   <data name="TaskGroupToggle" xml:space="preserve"><value>Expand or collapse group</value></data>
   <data name="TaskGroupSelect" xml:space="preserve"><value>Select or deselect all tasks in this group</value></data>
+  <data name="TaskMoveToTop" xml:space="preserve"><value>Move to top</value></data>
+  <data name="TaskMoveToBottom" xml:space="preserve"><value>Move to bottom</value></data>
 </root>
 
 

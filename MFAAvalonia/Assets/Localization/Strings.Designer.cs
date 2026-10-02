@@ -2715,6 +2715,24 @@ namespace MFAAvalonia.Assets.Localization {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to 置顶.
+        /// </summary>
+        public static string TaskMoveToTop {
+            get {
+                return ResourceManager.GetString("TaskMoveToTop", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to 置底.
+        /// </summary>
+        public static string TaskMoveToBottom {
+            get {
+                return ResourceManager.GetString("TaskMoveToBottom", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to Pipeline文件中任务的{0}使用了不存在的任务:&quot;{1}&quot;！.
         /// </summary>
         public static string TaskNotFoundError {

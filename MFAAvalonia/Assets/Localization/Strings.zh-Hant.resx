@@ -2101,6 +2101,8 @@
   <data name="TaskGroupDelete" xml:space="preserve"><value>刪除分組，保留並平鋪任務</value></data>
   <data name="TaskGroupToggle" xml:space="preserve"><value>展開或摺疊分組</value></data>
   <data name="TaskGroupSelect" xml:space="preserve"><value>全選或取消全選組內任務</value></data>
+  <data name="TaskMoveToTop" xml:space="preserve"><value>置頂</value></data>
+  <data name="TaskMoveToBottom" xml:space="preserve"><value>置底</value></data>
 </root>
 
 

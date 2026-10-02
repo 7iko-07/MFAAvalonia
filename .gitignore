@@ -6,3 +6,5 @@ riderModule.iml
 .dotnet-cli/
 .dotnet/
 .idea/
+*.log
+*.md

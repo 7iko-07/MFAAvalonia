@@ -2108,4 +2108,6 @@
   <data name="TaskGroupDelete" xml:space="preserve"><value>グループを削除し、タスクをグループ外に保持</value></data>
   <data name="TaskGroupToggle" xml:space="preserve"><value>グループを展開・折りたたむ</value></data>
   <data name="TaskGroupSelect" xml:space="preserve"><value>グループ内のタスクをすべて選択・解除</value></data>
+  <data name="TaskMoveToTop" xml:space="preserve"><value>先頭に移動</value></data>
+  <data name="TaskMoveToBottom" xml:space="preserve"><value>末尾に移動</value></data>
 </root>

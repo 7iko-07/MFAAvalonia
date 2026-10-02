@@ -17,12 +17,15 @@ public partial class TaskItemGroupViewModel : ObservableObject, IDisposable
     public bool IsUngrouped { get; private set; }
     public bool ShowGroup => !IsUngrouped || Items.Count > 0;
     public bool CanEdit => Owner?.Idle == true;
-    public bool CanSelect => CanEdit && Items.Any(item => !item.IsResourceOptionItem);
+    private IEnumerable<DragItemViewModel> SelectionItems => Owner != null && !IsUngrouped
+        ? Owner.TaskItemGroups.Where(group => !group.IsUngrouped && group.Name == Name).SelectMany(group => group.Items)
+        : Items;
+    public bool CanSelect => CanEdit && SelectionItems.Any(item => !item.IsResourceOptionItem);
     public bool? SelectionState
     {
         get
         {
-            var tasks = Items.Where(item => !item.IsResourceOptionItem).ToList();
+            var tasks = SelectionItems.Where(item => !item.IsResourceOptionItem).ToList();
             var eligible = tasks.Where(item => item.InterfaceItem?.ExcludeFromSelectAll != true).ToList();
             if (tasks.Count == 0 || tasks.All(item => !item.IsChecked)) return false;
             if (tasks.All(item => item.IsChecked) || eligible.Count > 0 && eligible.All(item => item.IsChecked)) return true;
@@ -35,7 +38,7 @@ public partial class TaskItemGroupViewModel : ObservableObject, IDisposable
     {
         if (!CanSelect) return;
         var select = SelectionState != true;
-        foreach (var item in Items.Where(item => !item.IsResourceOptionItem))
+        foreach (var item in SelectionItems.Where(item => !item.IsResourceOptionItem))
             item.IsChecked = select && item.InterfaceItem?.ExcludeFromSelectAll != true;
     }
     private readonly System.Collections.Generic.HashSet<DragItemViewModel> _observedItems = [];
@@ -59,14 +62,19 @@ public partial class TaskItemGroupViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectionState));
     }
 
-    private void OnItemsChanged(object? sender, NotifyCollectionChangedEventArgs e) => ObserveItems();
+    private void OnItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (Owner != null) Owner.RefreshTaskGroupSelection(this);
+        else ObserveItems();
+    }
+    internal void RefreshSelection() => ObserveItems();
     private void OnItemChanged(object? sender, PropertyChangedEventArgs e) => OnPropertyChanged(nameof(SelectionState));
     private void ObserveItems()
     {
         OnPropertyChanged(nameof(ShowGroup));
         foreach (var item in _observedItems) item.PropertyChanged -= OnItemChanged;
         _observedItems.Clear();
-        foreach (var item in Items)
+        foreach (var item in SelectionItems)
             if (_observedItems.Add(item)) item.PropertyChanged += OnItemChanged;
         OnPropertyChanged(nameof(CanSelect));
         OnPropertyChanged(nameof(SelectionState));
@@ -92,6 +100,8 @@ public partial class TaskItemGroupViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _hasIcon;
 
     [ObservableProperty] private bool _isExpanded = true;
+
+    partial void OnIsExpandedChanged(bool value) => Owner?.SynchronizeTaskGroupExpansion(this, value);
 
     public ObservableCollection<DragItemViewModel> Items { get; } = [];
 

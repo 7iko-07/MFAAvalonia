@@ -125,6 +125,21 @@
                 </MenuItem.Icon>
             </MenuItem>
             <Separator />
+            <MenuItem x:Name="TaskMenuMoveToTop"
+                      Click="MoveTaskToTop"
+                      Header="{markup:I18n {x:Static helper:LangKeys.TaskMoveToTop}}">
+                <MenuItem.Icon>
+                    <avalonia1:FluentIcon Icon="ArrowUp" IconSize="Size16" IconVariant="Regular" />
+                </MenuItem.Icon>
+            </MenuItem>
+            <MenuItem x:Name="TaskMenuMoveToBottom"
+                      Click="MoveTaskToBottom"
+                      Header="{markup:I18n {x:Static helper:LangKeys.TaskMoveToBottom}}">
+                <MenuItem.Icon>
+                    <avalonia1:FluentIcon Icon="ArrowDown" IconSize="Size16" IconVariant="Regular" />
+                </MenuItem.Icon>
+            </MenuItem>
+            <Separator />
             <MenuItem x:Name="TaskMenuRemark"
                       Click="EditTaskRemark"
                       Header="{markup:I18n {x:Static helper:LangKeys.TaskRemarkMenu}}">
