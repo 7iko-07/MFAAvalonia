@@ -171,7 +171,11 @@ public sealed class TransactionalUpdate(Action<string>? log = null, Action<int>?
                 if (!OperatingSystem.IsWindows() && record.LinkTarget == null) File.SetUnixFileMode(target, (UnixFileMode)record.Mode);
                 if (OperatingSystem.IsWindows() && record.LinkTarget == null) File.SetAttributes(target, (FileAttributes)record.Attributes);
             }
-            else Retry(() => DeleteFile(target));
+            else Retry(() =>
+            {
+                DeleteFile(target);
+                PruneEmptyParents(target, UpdatePaths.IsData(record.Path) ? journal.Plan.DataRoot : journal.Plan.InstallRoot);
+            });
         }
         File.Delete(journalPath);
         _log("已恢复更新前的文件与版本信息。");

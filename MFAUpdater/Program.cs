@@ -103,8 +103,11 @@ public class Program
         try
         {
             using var process = Process.GetProcessById(plan.ParentPid);
-            if (process.StartTime.ToUniversalTime().Ticks == plan.ParentStartTimeUtcTicks && !process.WaitForExit(60000))
-                throw new TimeoutException("主程序尚未退出，更新已取消。");
+            if (process.StartTime.ToUniversalTime().Ticks == plan.ParentStartTimeUtcTicks)
+            {
+                Log($"等待主程序退出：PID={plan.ParentPid}");
+                if (!process.WaitForExit(60000)) throw new TimeoutException("主程序尚未退出，更新已取消。");
+            }
         }
         catch (ArgumentException) { /* The original process has already exited. */ }
         try
