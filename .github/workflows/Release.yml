@@ -134,6 +134,9 @@ jobs:
       - name: Build Solution
         run: dotnet publish MFAAvalonia.Desktop/MFAAvalonia.Desktop.csproj -c Release -r ${{ matrix.platform }}-${{ matrix.arch }}
 
+      - name: Publish independent updater
+        run: dotnet publish MFAUpdater/MFAUpdater.csproj -c Release -r ${{ matrix.platform }}-${{ matrix.arch }} -o bin/AnyCPU/Release/${{ matrix.platform }}-${{ matrix.arch }}/publish
+
       - name: Sign macOS App with Adhoc Certificate
         if: ${{ matrix.is_macos == true }} 
         run: |

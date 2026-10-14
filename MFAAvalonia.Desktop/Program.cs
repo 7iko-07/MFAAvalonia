@@ -31,6 +31,27 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--identify")
+        {
+            Console.Write("MFAAvalonia");
+            return;
+        }
+        try
+        {
+            if (UpdateRecovery.TryRecover(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))) return;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            if (OperatingSystem.IsWindows()) MessageBox(IntPtr.Zero, ex.Message, "更新恢复失败", 0x10);
+            return;
+        }
+        StartApplication(args);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void StartApplication(string[] args)
+    {
         // 快速识别参数：用于更新时判断该可执行文件是否为 MFAAvalonia
         if (args.Length > 0 && args[0] == "--identify")
         {

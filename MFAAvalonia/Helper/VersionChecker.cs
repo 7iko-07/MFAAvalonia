@@ -1,4 +1,5 @@
-﻿using Avalonia;
+﻿using MFAUpdater;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Notifications;
 using Avalonia.Layout;
@@ -46,7 +47,7 @@ using System.Threading.Tasks;
 namespace MFAAvalonia.Helper;
 #pragma warning  disable CS1998 // 此异步方法缺少 "await" 运算符，将以同步方式运行。
 #pragma warning  disable CS4014 // 由于此调用不会等待，因此在此调用完成之前将会继续执行当前方法。
-public static class VersionChecker
+public static partial class VersionChecker
 {
     // 定制 UI 只从维护者仓库更新；资源下载源不能将其切回官方 UI。
     private const string UiUpdateOwner = "7iko-07";
@@ -413,534 +414,9 @@ public static class VersionChecker
     }
 
 
-    public async static Task UpdateResource(bool isGithub = true, bool closeDialog = false, bool noDialog = false, Action action = null, string currentVersion = "", string? localPackagePath = null)
-    {
-        shouldShowToast = false;
-        Instances.RootViewModel.SetUpdating(true);
-        var debugEnabled = IsEnvEnabled(ResourceUpdateDebugEnv);
-        var dryRun = debugEnabled && IsEnvEnabled(ResourceUpdateDryRunEnv);
-        var keepArtifacts = debugEnabled || IsEnvEnabled(ResourceUpdateKeepArtifactsEnv);
-        var isLocalPackage = !string.IsNullOrWhiteSpace(localPackagePath);
-        ProgressBar? progress = null;
-        TextBlock? textBlock = null;
-        TextBlock? downloadSpeedTextBlock = null;
-        ISukiToast? sukiToast = null;
-        StackPanel stackPanel = await DispatcherHelper.RunOnMainThreadAsync(() =>
-        {
-            progress = new ProgressBar
-            {
-                Height = 10,
-                Value = 0,
-                Margin = new Thickness(0, 5),
-                ShowProgressText = true
-            };
-            StackPanel stackPanel = new();
-            textBlock = new TextBlock
-            {
-                Text = LangKeys.GettingLatestResources.ToLocalization(),
-            };
-            downloadSpeedTextBlock = new TextBlock
-            {
-                Text = string.Empty,
-                HorizontalAlignment = HorizontalAlignment.Right
-            };
-            var infoGrid = new Grid
-            {
-                ColumnDefinitions = new ColumnDefinitions("*,Auto")
-            };
-            Grid.SetColumn(textBlock, 0);
-            Grid.SetColumn(downloadSpeedTextBlock, 1);
-            infoGrid.Children.Add(textBlock);
-            infoGrid.Children.Add(downloadSpeedTextBlock);
-            stackPanel.Children.Add(progress);
-            stackPanel.Children.Add(infoGrid);
-            return stackPanel;
-        });
-
-        sukiToast = await DispatcherHelper.RunOnMainThreadAsync(() =>
-            Instances.ToastManager.CreateToast()
-                .WithTitle(LangKeys.UpdateResource.ToLocalization())
-                .WithContent(stackPanel).Queue()
-        );
-        var localVersion = string.IsNullOrWhiteSpace(currentVersion) ? MaaProcessor.Interface?.Version ?? string.Empty : currentVersion;
-
-        if (string.IsNullOrWhiteSpace(localVersion))
-        {
-            Dismiss(sukiToast);
-            ToastHelper.Warn(LangKeys.FailToGetCurrentVersionInfo.ToLocalization());
-            Instances.RootViewModel.SetUpdating(false);
-            return;
-        }
-
-        SetProgress(progress, 10);
-        string[] strings = [];
-        if (isGithub)
-        {
-            var url = MaaProcessor.Interface?.Github ?? MaaProcessor.Interface?.Url ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                Dismiss(sukiToast);
-                ToastHelper.Warn(LangKeys.CurrentResourcesNotSupportGitHub.ToLocalization());
-                Instances.RootViewModel.SetUpdating(false);
-                return;
-            }
-            strings = GetRepoFromUrl(url);
-        }
-        string latestVersion = string.Empty;
-        string downloadUrl = string.Empty;
-        string sha256 = string.Empty;
-        var isFull = true;
-        if (isLocalPackage)
-        {
-            if (!File.Exists(localPackagePath))
-            {
-                Dismiss(sukiToast);
-                ToastHelper.Warn(LangKeys.Warning.ToLocalization(), $"本地资源包不存在：{localPackagePath}");
-                Instances.RootViewModel.SetUpdating(false);
-                return;
-            }
-
-            latestVersion = Path.GetFileNameWithoutExtension(localPackagePath);
-            downloadUrl = localPackagePath;
-            LoggerHelper.Info($"已选择本地更新包：文件={localPackagePath}");
-        }
-        else
-        {
-            try
-            {
-                if (isGithub)
-                {
-                    var result = await GetLatestVersionAndDownloadUrlFromGithubAsync(strings[0], strings[1], false, "", localVersion).ConfigureAwait(false);
-                    downloadUrl = result.url;
-                    latestVersion = result.latestVersion;
-                    sha256 = result.sha256;
-                }
-                else
-                    GetDownloadUrlFromMirror(localVersion, GetResourceID(), CDK(), out downloadUrl, out latestVersion, out sha256, out isFull, currentVersion: localVersion);
-            }
-            catch (Exception ex)
-            {
-                Dismiss(sukiToast);
-                ToastHelper.Warn($"{LangKeys.FailToGetLatestVersionInfo.ToLocalization()}", ex.Message, -1);
-                Instances.RootViewModel.SetUpdating(false);
-                LoggerHelper.Error($"获取资源包下载信息失败：来源={(isGithub ? "GitHub" : "Mirror")}，本地版本={localVersion}，原因={ex.Message}", ex);
-                return;
-            }
-        }
-
-        SetProgress(progress, 50);
-
-        if (string.IsNullOrWhiteSpace(latestVersion))
-        {
-            Dismiss(sukiToast);
-            ToastHelper.Warn(LangKeys.FailToGetLatestVersionInfo.ToLocalization());
-            Instances.RootViewModel.SetUpdating(false);
-            Instances.InstanceTabBarViewModel.ActiveTab?.TaskQueueViewModel.ClearDownloadProgress();
-            return;
-        }
-
-        if (!isLocalPackage && !IsNewVersionAvailable(latestVersion, localVersion))
-        {
-            Dismiss(sukiToast);
-            ToastHelper.Info(LangKeys.ResourcesAreLatestVersion.ToLocalization());
-            Instances.RootViewModel.SetUpdating(false);
-            Instances.InstanceTabBarViewModel.ActiveTab?.TaskQueueViewModel.ClearDownloadProgress();
-            action?.Invoke();
-            return;
-        }
-
-        SetProgress(progress, 100);
-
-        if (!isLocalPackage && string.IsNullOrWhiteSpace(downloadUrl))
-        {
-            Dismiss(sukiToast);
-            ToastHelper.Warn(LangKeys.FailToGetDownloadUrl.ToLocalization());
-            Instances.RootViewModel.SetUpdating(false);
-            Instances.InstanceTabBarViewModel.ActiveTab?.TaskQueueViewModel.ClearDownloadProgress();
-            return;
-        }
-        MaaProcessorManager.Instance.Current.SetTasker();
-        // 仅停止正在运行的任务，不 Dispose 处理器（避免界面变白/配置列表清空）
-        // BeforeClosed 将在重启前调用
-        DispatcherHelper.PostOnMainThread(() =>
-        {
-            if (Instances.RootViewModel.IsRunning)
-            {
-                foreach (var processor in MaaProcessor.Processors)
-                {
-                    processor.Stop(MFATask.MFATaskStatus.STOPPED);
-                }
-            }
-        });
-        var tempPath = AppPaths.TempResourceDirectory;
-        Directory.CreateDirectory(tempPath);
-        var debugSessionId = DateTime.Now.ToString("yyyyMMddHHmmss");
-        string fileExtension = GetFileExtensionFromUrl(downloadUrl);
-        if (string.IsNullOrEmpty(fileExtension))
-        {
-            fileExtension = ".zip";
-        }
-        var tempZipFilePath = isLocalPackage
-            ? localPackagePath!
-            : Path.Combine(
-                tempPath,
-                keepArtifacts ? $"resource_{latestVersion}_{debugSessionId}{fileExtension}" : $"resource_{latestVersion}{fileExtension}");
-
-        if (!isLocalPackage)
-        {
-            SetStatusText(textBlock, downloadSpeedTextBlock, LangKeys.Downloading.ToLocalization());
-            SetProgress(progress, 0);
-            (var downloadStatus, tempZipFilePath) = await DownloadWithRetry(downloadUrl, tempZipFilePath, progress, 3, textBlock, downloadSpeedTextBlock);
-            LoggerHelper.Info($"已下载更新包到临时文件：文件={tempZipFilePath}");
-            if (!downloadStatus)
-            {
-                Dismiss(sukiToast);
-                ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.DownloadFailed.ToLocalization());
-                Instances.RootViewModel.SetUpdating(false);
-                return;
-            }
-        }
-        else
-        {
-            SetStatusText(textBlock, downloadSpeedTextBlock, $"使用本地更新包：{Path.GetFileName(localPackagePath)}");
-            LoggerHelper.Info($"使用本地更新包执行更新：文件={tempZipFilePath}");
-        }
-
-        SetStatusText(textBlock, downloadSpeedTextBlock, LangKeys.Extracting.ToLocalization());
-        SetProgress(progress, 0);
-
-        var tempExtractDir = isLocalPackage
-            ? GetLocalPackageExtractDirectory(localPackagePath!)
-            : Path.Combine(
-                tempPath,
-                keepArtifacts ? $"resource_{latestVersion}_{debugSessionId}_extracted" : $"resource_{latestVersion}_extracted");
-        if (Directory.Exists(tempExtractDir))
-            Directory.Delete(tempExtractDir, true);
-        if (!File.Exists(tempZipFilePath))
-        {
-            Dismiss(sukiToast);
-            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.DownloadFailed.ToLocalization());
-            Instances.RootViewModel.SetUpdating(false);
-            return;
-        }
-        SetStatusText(textBlock, downloadSpeedTextBlock, LangKeys.Verifying.ToLocalization());
-        var sha256Verified = true;
-        if (isLocalPackage)
-        {
-            LoggerHelper.Info($"本地更新包已跳过远程 SHA256 校验：文件={tempZipFilePath}");
-        }
-        else if (string.IsNullOrWhiteSpace(sha256))
-        {
-            LoggerHelper.Warning($"已跳过 SHA256 校验：文件={tempZipFilePath}，原因=未提供校验值");
-        }
-        else
-        {
-            sha256Verified = await VerifyFileSha256Async(tempZipFilePath, sha256);
-            LoggerHelper.Info($"SHA256 校验结果：文件={tempZipFilePath}，期望值={sha256}，通过={sha256Verified}");
-        }
-        if (!string.IsNullOrWhiteSpace(sha256) && !sha256Verified)
-        {
-            Dismiss(sukiToast);
-            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.HashVerificationFailed.ToLocalization());
-            Instances.RootViewModel.SetUpdating(false);
-            return;
-        }
-        SetStatusText(textBlock, downloadSpeedTextBlock, LangKeys.Extracting.ToLocalization());
-        LoggerHelper.Info($"准备解压资源包：源文件={tempZipFilePath}，目标目录={tempExtractDir}");
-        UniversalExtractor.Extract(tempZipFilePath, tempExtractDir);
-        SetStatusText(textBlock, downloadSpeedTextBlock, LangKeys.ApplyingUpdate.ToLocalization());
-        var changesPath = Path.Combine(tempExtractDir, "changes.json");
-        var isIncrementalPackage = File.Exists(changesPath)
-                                   && (isLocalPackage || !isGithub)
-                                   && !currentVersion.Equals("v0.0.0", StringComparison.OrdinalIgnoreCase);
-        if (!ValidateExtractedResourcePackage(tempExtractDir, isIncrementalPackage, out var originPath, out var interfacePath, out var resourceDirPath, out var validationMessage))
-        {
-            Dismiss(sukiToast);
-            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), validationMessage, -1);
-            Instances.RootViewModel.SetUpdating(false);
-            return;
-        }
-
-        var containsCoreApplicationFiles = ContainsCoreApplicationFiles(originPath);
-        if (containsCoreApplicationFiles)
-        {
-            LoggerHelper.Warning($"更新包包含核心程序文件，将按二合一路径处理安装目录与数据目录：目录={originPath}");
-        }
-
-        if (File.Exists(interfacePath))
-        {
-            try
-            {
-                var interfaceJson = JObject.Parse(await File.ReadAllTextAsync(interfacePath));
-                latestVersion = interfaceJson["version"]?.ToString() ?? latestVersion;
-            }
-            catch (Exception ex)
-            {
-                LoggerHelper.Warning($"读取本地资源包版本信息失败：文件={interfacePath}，原因={ex.Message}");
-            }
-        }
-
-        var wpfDir = AppPaths.DataRoot;
-        var resourcePath = AppPaths.ResourceDirectory;
-        var agentPath = AppPaths.AgentDirectory;
-        // 获取当前运行的可执行文件路径（最可靠的方式，即使用户重命名了文件也能正确获取）
-        var exeName = Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty;
-        LoggerHelper.Info($"当前进程可执行文件：{exeName}");
-        // 如果路径为空或文件不存在，尝试其他方式
-        if (string.IsNullOrEmpty(exeName) || !File.Exists(exeName))
-        {
-            // 尝试使用 Environment.ProcessPath (.NET 6+)
-            exeName = Environment.ProcessPath ?? string.Empty;
-            LoggerHelper.Info($"已改用 Environment.ProcessPath 获取进程路径：{exeName}");
-        }
-
-        // 如果仍然为空或不存在，使用 AppContext.BaseDirectory + 当前进程名
-        if (string.IsNullOrEmpty(exeName) || !File.Exists(exeName))
-        {
-            var processName = Process.GetCurrentProcess().ProcessName;
-            var extension = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "";
-            exeName = Path.Combine(AppContext.BaseDirectory, processName + extension);
-            LoggerHelper.Info($"已回退为进程名推断可执行文件路径：{exeName}");
-        }
-        if (File.Exists(changesPath))
-            isFull = false;
-        else
-            LoggerHelper.Error($"未找到 changes.json，无法执行增量更新：文件={changesPath}");
-        LogResourceUpdateDebugSummary(
-            "validated",
-            latestVersion,
-            localVersion,
-            tempZipFilePath,
-            tempExtractDir,
-            originPath,
-            wpfDir,
-            isGithub,
-            isFull,
-            isIncrementalPackage,
-            debugEnabled,
-            dryRun);
-        WriteResourceUpdateDebugManifest(
-            tempPath,
-            latestVersion,
-            localVersion,
-            downloadUrl,
-            tempZipFilePath,
-            tempExtractDir,
-            originPath,
-            interfacePath,
-            isGithub,
-            isFull,
-            isIncrementalPackage,
-            debugEnabled,
-            dryRun);
-        LoggerHelper.Info((isGithub || isFull || currentVersion.Equals("v0.0.0", StringComparison.OrdinalIgnoreCase)) ? "全量更新" : "增量更新");
-        if (isGithub || isFull || currentVersion.Equals("v0.0.0", StringComparison.OrdinalIgnoreCase))
-        {
-            if (Directory.Exists(resourcePath))
-            {
-                foreach (var rfile in Directory.EnumerateFiles(resourcePath, "*", SearchOption.AllDirectories))
-                {
-                    var fileName = Path.GetFileName(rfile);
-                    if (fileName.Equals(ChangelogViewModel.ChangelogFileName, StringComparison.OrdinalIgnoreCase) || fileName.Contains("interface.json", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    try
-                    {
-                        File.SetAttributes(rfile, FileAttributes.Normal);
-                        LoggerHelper.Info($"准备删除旧文件：文件={rfile}");
-                        DeleteFileWithBackup(rfile);
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerHelper.Error($"删除旧文件失败：文件={rfile}，原因={ex.Message}", ex);
-                    }
-                }
-            }
-            if (Directory.Exists(agentPath))
-            {
-                foreach (var rfile in Directory.EnumerateFiles(agentPath, "*", SearchOption.AllDirectories))
-                {
-                    var fileName = Path.GetFileName(rfile);
-                    if (fileName.Equals(ChangelogViewModel.ChangelogFileName, StringComparison.OrdinalIgnoreCase) || fileName.Contains("interface.json", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    try
-                    {
-                        File.SetAttributes(rfile, FileAttributes.Normal);
-                        LoggerHelper.Info($"准备删除旧文件：文件={rfile}");
-                        DeleteFileWithBackup(rfile);
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerHelper.Error($"删除旧文件失败：文件={rfile}，原因={ex.Message}", ex);
-                    }
-                }
-            }
-        }
-        else
-        {
-            if (File.Exists(changesPath))
-            {
-                var changes = await File.ReadAllTextAsync(changesPath);
-                if (string.IsNullOrWhiteSpace(changes))
-                {
-                    LoggerHelper.Warning($"changes.json 为空，无法执行增量更新：文件={changesPath}");
-                }
-                else
-                {
-                    var stringBuilder = new StringBuilder(DateTime.Now.ToString("yyyy-MM-dd"));
-                    stringBuilder.AppendLine(changes);
-                    await File.WriteAllTextAsync(AppPaths.ChangesPath, stringBuilder.ToString());
-                }
-                try
-                {
-                    var changesJson = JsonConvert.DeserializeObject<MirrorChangesJson>(changes);
-                    if (changesJson?.Deleted != null)
-                    {
-                        var delPaths = changesJson.Deleted
-                            .Select(del =>
-                            {
-                                var isSafe = TryGetSafeUpdateTargetPath(del, out var fullPath);
-                                if (!isSafe)
-                                    LoggerHelper.Warning($"跳过越界删除路径: {del}");
-                                return (isSafe, fullPath);
-                            })
-                            .Where(item => item.isSafe && File.Exists(item.fullPath))
-                            .Select(item => item.fullPath);
-
-                        foreach (var delPath in delPaths)
-                        {
-                            try
-                            {
-
-                                LoggerHelper.Info($"准备删除增量更新中标记为 Deleted 的文件：文件={delPath}");
-                                DeleteFileWithBackup(delPath);
-
-                            }
-                            catch (Exception e)
-                            {
-                                LoggerHelper.Error($"删除增量更新中标记为 Deleted 的文件失败：文件={delPath}，原因={e.Message}", e);
-                            }
-                        }
-                    }
-                    if (changesJson?.Modified != null)
-                    {
-                        var delPaths = changesJson.Modified
-                            .Select(del =>
-                            {
-                                var isSafe = TryGetSafeUpdateTargetPath(del, out var fullPath);
-                                if (!isSafe)
-                                    LoggerHelper.Warning($"跳过越界修改路径: {del}");
-                                return (isSafe, fullPath);
-                            })
-                            .Where(item => item.isSafe && File.Exists(item.fullPath))
-                            .Select(item => item.fullPath);
-
-                        foreach (var delPath in delPaths)
-                        {
-                            try
-                            {
-                                LoggerHelper.Info($"准备删除增量更新中标记为 Modified 的旧文件：文件={delPath}");
-                                DeleteFileWithBackup(delPath);
-                            }
-                            catch (Exception e)
-                            {
-                                LoggerHelper.Error($"删除增量更新中标记为 Modified 的旧文件失败：文件={delPath}，原因={e.Message}", e);
-                            }
-
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    LoggerHelper.Error($"处理增量更新文件列表失败：changes.json={changesPath}，原因={e.Message}", e);
-                }
-            }
-        }
-
-
-        SetProgress(progress, 1);
-
-        if (dryRun)
-        {
-            SetProgress(progress, 100);
-            SetStatusText(textBlock, downloadSpeedTextBlock, "UpdateResource DryRun completed");
-            LoggerHelper.Warning($"[UpdateResourceDebug] 已启用 DryRun，跳过实际覆盖与重启。tempExtractDir={tempExtractDir}");
-            ToastHelper.Info("UpdateResource DryRun 已完成", tempExtractDir, 5000);
-            Instances.RootViewModel.SetUpdating(false);
-            if (closeDialog)
-                Dismiss(sukiToast);
-            action?.Invoke();
-            return;
-        }
-
-        var di = new DirectoryInfo(originPath);
-        if (di.Exists)
-        {
-            await CopyUpdatePayload(originPath, progress, true, default, copyDataFiles: true, copyInstallFiles: !containsCoreApplicationFiles);
-        }
-
-        // 最后再更新 interface.json，避免先写元数据后拷资源导致半更新状态
-        var newInterfacePath = Path.Combine(wpfDir, "interface.json");
-        if (File.Exists(interfacePath))
-        {
-            var jsonContent = await File.ReadAllTextAsync(interfacePath);
-            var @interface = JObject.Parse(jsonContent);
-            if (@interface != null)
-            {
-                @interface["github"] = MaaProcessor.Interface?.Github ?? MaaProcessor.Interface?.Url;
-                @interface["version"] = latestVersion;
-            }
-            await File.WriteAllTextAsync(newInterfacePath, @interface.ToString(Formatting.Indented));
-        }
-
-        SetProgress(progress, 100);
-        SetStatusText(textBlock, downloadSpeedTextBlock, LangKeys.UpdateCompleted.ToLocalization());
-        Instances.RootViewModel.SetUpdating(false);
-
-        if (closeDialog)
-            Dismiss(sukiToast);
-        shouldShowToast = true;
-        action?.Invoke();
-
-        var restartExecutablePath = exeName;
-        if (containsCoreApplicationFiles)
-        {
-            var packageExecutablePath = FindMFAExecutableInDirectory(originPath);
-            if (!string.IsNullOrWhiteSpace(packageExecutablePath))
-            {
-                var packageExecutableRelativePath = Path.GetRelativePath(originPath, packageExecutablePath);
-                restartExecutablePath = Path.Combine(AppPaths.InstallRoot, packageExecutableRelativePath);
-                LoggerHelper.Info($"检测到更新包中的主程序入口：源文件={packageExecutablePath}，重启目标={restartExecutablePath}");
-
-                if (HasExecutableFileNameChanged(exeName, restartExecutablePath))
-                {
-                    LoggerHelper.Info($"检测到主程序文件名变更，将在更新完成后尝试把旧主程序改名为 backupMFA：旧文件={exeName}，新文件={restartExecutablePath}");
-                }
-            }
-
-            LoggerHelper.Info($"更新包包含程序文件，直接写入安装目录：目标目录={AppPaths.InstallRoot}");
-            await CopyUpdatePayload(
-                originPath,
-                progress,
-                false,
-                default,
-                copyDataFiles: false,
-                copyInstallFiles: true,
-                continueOnCopyFailure: true,
-                skipRunningExecutable: true);
-
-            if (HasExecutableFileNameChanged(exeName, restartExecutablePath))
-            {
-                TryRenameExecutableToBackup(exeName, allowCurrentProcessExecutable: true);
-            }
-        }
-
-        // 重启前执行清理（保存配置、释放资源等）
-        DispatcherHelper.PostOnMainThread(() => Instances.RootView.BeforeClosed(true, true));
-        await RestartApplicationAsync(restartExecutablePath);
-    }
-
+    public static Task UpdateResource(bool isGithub = true, bool closeDialog = false, bool noDialog = false,
+        Action action = null, string currentVersion = "", string? localPackagePath = null) =>
+        UpdateResourceTransactionalAsync(isGithub, closeDialog, noDialog, action, currentVersion, localPackagePath);
     /// <summary>
     /// 跨平台重启应用（仅 macOS 处理权限和启动逻辑，Windows/Linux 保留原有逻辑）
     /// </summary>
@@ -1578,30 +1054,11 @@ public static class VersionChecker
             // 执行更新
             SetProgress(progress, 40);
 
-            // 准备备份目录
-            var backupDir = Path.Combine(AppPaths.BackupDirectory, DateTime.Now.ToString("yyyyMMddHHmmss"));
-            Directory.CreateDirectory(backupDir);
-
-            // 执行文件替换
-            SetProgress(progress, 60);
-            await ReplaceFilesWithRetry(extractDir, backupDir);
-
-            SetProgress(progress, 100);
-
-            // 获取当前可执行文件名以重启
-            string exeName = Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty;
-            if (string.IsNullOrEmpty(exeName) || !File.Exists(exeName))
-            {
-                // 如果获取失败，尝试构建默认路径
-                var processName = Process.GetCurrentProcess().ProcessName;
-                var extension = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "";
-                exeName = Path.Combine(AppContext.BaseDirectory, processName + extension);
-            }
-
-            // 在重启前给一点时间
-            await Task.Delay(500);
-
-            await RestartApplicationAsync(exeName);
+            var session = Path.Combine(tempPath, "update-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(session);
+            var plan = CreatePackageUpdatePlan(extractDir, null, latestVersion, session, resourceUpdate: false);
+            TransactionalUpdate.VerifyPayload(plan);
+            await LaunchPackageUpdaterAsync(plan, session);
         }
         finally
         {
@@ -1851,6 +1308,11 @@ public static class VersionChecker
 
     public async static Task UpdateMaaFw()
     {
+        if (File.Exists(Path.Combine(AppPaths.InstallRoot, "python-dependencies.json")))
+        {
+            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), "此资源包的 MaaFW 与 Python 依赖必须配套更新，请使用资源更新或完整安装包。");
+            return;
+        }
         Instances.RootViewModel.SetUpdating(true);
         ProgressBar? progress = null;
         TextBlock? textBlock = null;
@@ -1922,6 +1384,8 @@ public static class VersionChecker
 
             SetText(textBlock, LangKeys.ApplyingUpdate.ToLocalization());
             // 文件替换（复用ReplaceFilesWithRetry）
+            if (!string.IsNullOrEmpty(sha256) && !await VerifyFileSha256Async(tempZip, sha256))
+                throw new InvalidDataException("MaaFW 更新包 SHA-256 校验失败。");
             SetProgress(progress, 0);
             var extractDir = Path.Combine(tempPath, $"maafw_{latestVersion}_extracted");
             if (Directory.Exists(extractDir))
@@ -1929,14 +1393,33 @@ public static class VersionChecker
             ZipFile.ExtractToDirectory(tempZip, extractDir);
             SetProgress(progress, 20);
 
-            var utf8Bytes = Encoding.UTF8.GetBytes(AppContext.BaseDirectory);
-            var utf8BaseDirectory = Encoding.UTF8.GetString(utf8Bytes);
             var sourceBytes = Encoding.UTF8.GetBytes(Path.Combine(extractDir, "bin"));
             var sourceDirectory = Encoding.UTF8.GetString(sourceBytes);
             SetProgress(progress, 100);
 
-            // 清理与重启（复用ApplySecureUpdate）
-            await ApplySecureUpdate(sourceDirectory, utf8BaseDirectory, Process.GetCurrentProcess().MainModule.ModuleName);
+            var session = Path.Combine(tempPath, "update-" + Guid.NewGuid().ToString("N"));
+            var payload = Path.Combine(session, "payload");
+            var rid = $"{(OperatingSystem.IsWindows() ? "win" : OperatingSystem.IsMacOS() ? "osx" : "linux")}-{GetNormalizedArchitecture()}";
+            foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(sourceDirectory, file).Replace('\\', '/');
+                var mapped = relative.StartsWith("plugins/") ? $"plugins/{rid}/{relative[8..]}" : $"runtimes/{rid}/native/{relative}";
+                var target = UpdatePaths.Resolve(payload, mapped);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target);
+                if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(target, File.GetUnixFileMode(file));
+            }
+            var agentBinary = Path.Combine(extractDir, "share", "MaaAgentBinary");
+            if (Directory.Exists(agentBinary))
+                foreach (var file in Directory.EnumerateFiles(agentBinary, "*", SearchOption.AllDirectories))
+                {
+                    var target = UpdatePaths.Resolve(payload, "libs/MaaAgentBinary/" + Path.GetRelativePath(agentBinary, file).Replace('\\', '/'));
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    File.Copy(file, target);
+                    if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(target, File.GetUnixFileMode(file));
+                }
+            var plan = CreatePackageUpdatePlan(payload, null, latestVersion, session, resourceUpdate: false);
+            await LaunchPackageUpdaterAsync(plan, session);
         }
         finally
         {
@@ -2340,6 +1823,8 @@ public static class VersionChecker
                             Name = asset["name"]?.ToString().ToLower(),
                             Sha256 = ExtractSha256FromDigest(asset["digest"]?.ToString())
                         })
+                        .Where(a => a.Name != null && !a.Name.StartsWith("delta-", StringComparison.OrdinalIgnoreCase)
+                            && (a.Name.EndsWith(".zip") || a.Name.EndsWith(".tar.gz") || a.Name.EndsWith(".tgz") || a.Name.EndsWith(".7z")))
                         // 使用新的优先级计算方法（传入系统家族）
                         .OrderByDescending(a => GetAssetPriority(a.Name, osPlatform, osFamily, cpuArch))
                         .ToList();
@@ -3114,7 +2599,6 @@ public static class VersionChecker
         }
     }
 
-    [Obsolete("旧的外部更新器探测逻辑，已废弃；保留仅为兼容仍引用 ApplySecureUpdate 的旧流程。")]
     private static string FindUpdaterExecutablePath(string baseDirectory)
     {
         if (string.IsNullOrWhiteSpace(baseDirectory) || !Directory.Exists(baseDirectory))

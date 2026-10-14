@@ -3,6 +3,8 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
+using MFAUpdater;
 
 public class Program
 {
@@ -42,6 +44,16 @@ public class Program
         try
         {
             Directory.SetCurrentDirectory(AppContext.BaseDirectory);
+            if (args.Length == 1 && args[0] == "--protocol")
+            {
+                Console.WriteLine("mfa-update-v1");
+                return;
+            }
+            if (args.Length == 2 && args[0] is "--apply-plan" or "--recover")
+            {
+                RunTransactionalUpdate(args[0], args[1]);
+                return;
+            }
             Version version = GetCurrentVersion();
             if (args.Length > 0 && args[0].Equals("--version", StringComparison.OrdinalIgnoreCase))
             {
@@ -65,6 +77,7 @@ public class Program
         }
         catch (Exception ex)
         {
+            Environment.ExitCode = 1;
             Log($"更新过程发生错误: {ex.Message}");
             SaveLog();
         }
@@ -72,6 +85,49 @@ public class Program
         {
             SaveLog();
         }
+    }
+
+    private static void RunTransactionalUpdate(string command, string path)
+    {
+        var updater = new TransactionalUpdate(message => Log(message));
+        UpdatePlan plan;
+        if (command == "--recover")
+        {
+            plan = updater.Recover(Path.GetFullPath(path));
+            StartUpdatedApplication(plan.RestartPath, plan.InstallRoot);
+            return;
+        }
+        plan = JsonSerializer.Deserialize<UpdatePlan>(File.ReadAllText(path), UpdateManifest.JsonOptions)
+               ?? throw new InvalidDataException("更新计划为空。");
+        // Do not replace any file until the original process has really exited.
+        try
+        {
+            using var process = Process.GetProcessById(plan.ParentPid);
+            if (process.StartTime.ToUniversalTime().Ticks == plan.ParentStartTimeUtcTicks && !process.WaitForExit(60000))
+                throw new TimeoutException("主程序尚未退出，更新已取消。");
+        }
+        catch (ArgumentException) { /* The original process has already exited. */ }
+        try
+        {
+            updater.Apply(plan);
+        }
+        catch
+        {
+            if (!File.Exists(Path.Combine(plan.InstallRoot, TransactionalUpdate.JournalName)))
+                StartUpdatedApplication(plan.PreviousRestartPath, plan.InstallRoot);
+            throw;
+        }
+        StartUpdatedApplication(plan.RestartPath, plan.InstallRoot);
+    }
+
+    private static void StartUpdatedApplication(string executable, string workingDirectory)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = executable,
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = true
+        });
     }
 
 
