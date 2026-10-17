@@ -34,15 +34,7 @@
         <NoWarn>NU1701;NU1510</NoWarn>
     </PropertyGroup>
 
-    <!-- Version -->
-    <PropertyGroup>
-        <ApplicationRevision>0</ApplicationRevision>
-        <ApplicationVersion>2.12.0</ApplicationVersion>
-        <Version>1.1</Version>
-        <FileVersion>2.12.0</FileVersion>
-        <AssemblyVersion>2.12.0</AssemblyVersion>
-        <InformationalVersion>0.0.1</InformationalVersion>
-    </PropertyGroup>
+    <Import Project="..\build\AppVersion.props" />
 
     <ItemGroup>
         <PackageReference Include="Avalonia" Version="11.3.12" />

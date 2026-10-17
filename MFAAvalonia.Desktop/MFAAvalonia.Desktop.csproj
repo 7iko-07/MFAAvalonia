@@ -35,6 +35,8 @@
         <DebugSymbols>false</DebugSymbols>
     </PropertyGroup>
 
+    <Import Project="..\build\AppVersion.props" />
+
     <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
         <PackageReference Update="Packaging.Targets">
             <Version>0.1.232</Version>

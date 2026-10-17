@@ -6,6 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../MFAAvalonia/Helper/GithubActionsUpdateSource.cs" Link="GithubActionsUpdateSource.cs" />
+    <Compile Include="../../MFAAvalonia/Helper/GithubReleaseSession.cs" Link="GithubReleaseSession.cs" />
+    <Compile Include="../../MFAAvalonia/Helper/UpdateArchive.cs" Link="UpdateArchive.cs" />
     <Compile Include="../../MFAUpdater/UpdateManifest.cs" Link="UpdateManifest.cs" />
     <Compile Include="../../MFAUpdater/TransactionalUpdate.cs" Link="TransactionalUpdate.cs" />
   </ItemGroup>

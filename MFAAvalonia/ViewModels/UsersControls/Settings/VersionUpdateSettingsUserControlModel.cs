@@ -202,13 +202,6 @@ public partial class VersionUpdateSettingsUserControlModel : ViewModelBase
         ConfigurationManager.Current.SetValue(ConfigurationKeys.DownloadSourceIndex, value);
     }
 
-    public ObservableCollection<LocalizationViewModel> UIUpdateChannelList =>
-    [
-        new(LangKeys.AlphaVersion),
-        new(LangKeys.BetaVersion),
-        new(LangKeys.StableVersion),
-    ];
-
     [ObservableProperty] private int _uIUpdateChannelIndex = ConfigurationManager.Current.GetValue(ConfigurationKeys.UIUpdateChannelIndex, 2);
 
     partial void OnUIUpdateChannelIndexChanged(int value)
@@ -324,16 +317,6 @@ public partial class VersionUpdateSettingsUserControlModel : ViewModelBase
         VersionChecker.CheckResourceVersionAsync();
     }
 
-    [RelayCommand]
-    private void UpdateMFA()
-    {
-        VersionChecker.UpdateMFAAsync();
-    }
-    [RelayCommand]
-    private void CheckMFAUpdate()
-    {
-        VersionChecker.CheckMFAVersionAsync();
-    }
     [RelayCommand]
     private void UpdateMaaFW()
     {

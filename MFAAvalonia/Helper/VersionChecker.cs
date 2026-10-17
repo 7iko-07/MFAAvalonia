@@ -1483,12 +1483,7 @@ public static partial class VersionChecker
         const int perPage = 30;
         using var httpClient = CreateHttpClientWithProxy();
 
-        if (!string.IsNullOrWhiteSpace(Instances.VersionUpdateSettingsUserControlModel.GitHubToken))
-        {
-            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-                "Bearer",
-                Instances.VersionUpdateSettingsUserControlModel.GitHubToken);
-        }
+        var releaseSession = new GithubReleaseSession(httpClient, Instances.VersionUpdateSettingsUserControlModel.GitHubToken);
 
         httpClient.DefaultRequestHeaders.UserAgent.TryParseAdd("request");
         httpClient.DefaultRequestHeaders.Accept.TryParseAdd("application/json");
@@ -1502,7 +1497,7 @@ public static partial class VersionChecker
             var urlWithParams = $"{releaseUrl}?per_page={perPage}&page={page}";
             try
             {
-                var response = await httpClient.GetAsync(urlWithParams).ConfigureAwait(false);
+                using var response = await releaseSession.GetAsync(urlWithParams).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
                 {
                     string json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -1548,7 +1543,7 @@ public static partial class VersionChecker
                                 if (!onlyCheck && !isUI)
                                     SaveChangelog(tag, "body");
                             }
-                            (url, sha256) = await GetDownloadUrlFromGitHubReleaseAsync(latestVersion, owner, repo).ConfigureAwait(false);
+                            (url, sha256) = await GetDownloadUrlFromGitHubReleaseAsync(latestVersion, owner, repo, releaseSession).ConfigureAwait(false);
                             return (url, latestVersion, sha256);
                         }
 
@@ -1593,7 +1588,7 @@ public static partial class VersionChecker
                 if (!onlyCheck && !isUI)
                     SaveChangelog(bestRelease, "body");
             }
-            (url, sha256) = await GetDownloadUrlFromGitHubReleaseAsync(latestVersion, owner, repo).ConfigureAwait(false);
+            (url, sha256) = await GetDownloadUrlFromGitHubReleaseAsync(latestVersion, owner, repo, releaseSession).ConfigureAwait(false);
         }
         return (url, latestVersion, sha256);
     }
@@ -1785,7 +1780,7 @@ public static partial class VersionChecker
         return $@"\b{osOrFamily}-{arch}\b";
     }
 
-    private static async Task<(string downloadUrl, string sha256)> GetDownloadUrlFromGitHubReleaseAsync(string version, string owner, string repo)
+    private static async Task<(string downloadUrl, string sha256)> GetDownloadUrlFromGitHubReleaseAsync(string version, string owner, string repo, GithubReleaseSession? releaseSession = null)
     {
         string downloadUrl = string.Empty;
         string sha256 = string.Empty;
@@ -1799,16 +1794,11 @@ public static partial class VersionChecker
         httpClient.DefaultRequestHeaders.UserAgent.TryParseAdd("MFAComponentUpdater/1.0");
         httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
 
-        if (!string.IsNullOrWhiteSpace(Instances.VersionUpdateSettingsUserControlModel.GitHubToken))
-        {
-            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-                "Bearer",
-                Instances.VersionUpdateSettingsUserControlModel.GitHubToken);
-        }
+        releaseSession ??= new GithubReleaseSession(httpClient, Instances.VersionUpdateSettingsUserControlModel.GitHubToken);
 
         try
         {
-            var response = await httpClient.GetAsync(releaseUrl).ConfigureAwait(false);
+            using var response = await releaseSession.GetAsync(releaseUrl).ConfigureAwait(false);
             if (response.IsSuccessStatusCode)
             {
                 var jsonResponse = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -2829,7 +2819,7 @@ public static partial class VersionChecker
     }
 
 
-    public static HttpClient CreateHttpClientWithProxy()
+    public static HttpClient CreateHttpClientWithProxy(bool allowAutoRedirect = true)
     {
         bool disableSSL = File.Exists(Path.Combine(AppContext.BaseDirectory, "NO_SSL"));
 
@@ -2839,6 +2829,7 @@ public static partial class VersionChecker
         // 创建带有 SSL 处理的 HttpClientHandler
         var handler = new HttpClientHandler
         {
+            AllowAutoRedirect = allowAutoRedirect,
             ServerCertificateCustomValidationCallback = (sender, cert, chain, errors) =>
             {
                 // 如果禁用 SSL 验证，直接放行

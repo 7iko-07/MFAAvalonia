@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- Release.yml supplies the version from the release tag. -->
+    <MfaVersion Condition="'$(MfaVersion)' == ''">2.12.0-dev</MfaVersion>
+    <Version>$(MfaVersion)</Version>
+    <InformationalVersion>$(MfaVersion)</InformationalVersion>
+  </PropertyGroup>
+</Project>

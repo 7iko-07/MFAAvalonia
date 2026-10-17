@@ -162,6 +162,10 @@ try
         foreach (var deleted in plan.Deleted) Check(!File.Exists(plan.Target(deleted)), "Producer deletion not applied: " + deleted);
         Check(UpdateManifest.Read(plan.Target(UpdateManifest.FileName)).Version == plan.Manifest.Version, "Producer target version not committed");
     }
+    await ActionsUpdateTests.RunAsync(root, Check);
+    await ReleaseFallbackTests.RunAsync(Check);
+    ArchiveCaseTests.Run(root, Check);
+    DependencyLinkTests.Run(root, Check);
     Console.WriteLine($"Passed {passed} update smoke checks.");
 }
 finally

@@ -907,9 +907,9 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
 
     // Helper Creation Methods
 
-    private Grid CreateBaseGrid()
+    private OptionRowGrid CreateBaseGrid()
     {
-        var grid = new Grid
+        var grid = new OptionRowGrid
         {
             ColumnDefinitions =
             {
@@ -921,21 +921,20 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
         return grid;
     }
 
-    private Grid CreateSpecialTaskGrid(bool isFirstRow = false)
+    private OptionRowGrid CreateSpecialTaskGrid(bool isFirstRow = false)
     {
         var grid = CreateBaseGrid();
         grid.Margin = isFirstRow ? new Thickness(10, 6, 10, 6) : new Thickness(10, 3, 10, 3);
         return grid;
     }
 
-    private StackPanel CreateLabelPanel(string displayName, string? name, string? description, List<string>? document = null, bool isResourceBinding = false, bool useI18n = false)
+    private Grid CreateLabelPanel(string displayName, string? name, string? description, List<string>? document = null, bool isResourceBinding = false, bool useI18n = false)
     {
-        var stackPanel = new StackPanel
+        var labelPanel = new Grid
         {
-            Orientation = Orientation.Horizontal,
-            MinWidth = 180,
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Left
+            ClipToBounds = true
         };
         
         var textBlock = new TextBlock
@@ -943,7 +942,7 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
             FontSize = 14,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Left,
-            TextWrapping = TextWrapping.NoWrap,
+            TextWrapping = TextWrapping.Wrap,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
         
@@ -955,7 +954,8 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
             textBlock.Bind(TextBlock.TextProperty, new ResourceBindingWithFallback(displayName, name));
 
         textBlock.Bind(TextBlock.ForegroundProperty, new DynamicResourceExtension("SukiLowText"));
-        stackPanel.Children.Add(textBlock);
+        Grid.SetColumn(textBlock, 1);
+        labelPanel.Children.Add(textBlock);
         
         var tooltipText = GetTooltipText(description, document);
         if (!string.IsNullOrWhiteSpace(tooltipText))
@@ -963,10 +963,11 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
             var docBlock = new TooltipBlock();
             docBlock.Bind(TooltipBlock.TooltipTextProperty, new ResourceBinding(tooltipText));
             docBlock.Margin = new Thickness(4, 0, 0, 0); // Spacing
-            stackPanel.Children.Add(docBlock);
+            Grid.SetColumn(docBlock, 2);
+            labelPanel.Children.Add(docBlock);
         }
         
-        return stackPanel;
+        return labelPanel;
     }
 
     private static TextBlock CreateLabelText(string key)
@@ -974,7 +975,7 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
         var textBlock = new TextBlock
         {
             FontSize = 14,
-            MinWidth = 180,
+            TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Left
         };
@@ -1035,40 +1036,60 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
         control.Bind(Control.IsEnabledProperty, new Binding("Idle") { Source = Instances.RootViewModel });
     }
 
-    private void AddResponsiveBehavior(Grid grid, Control label, Control input)
+    private static void AddResponsiveBehavior(OptionRowGrid grid, Control label, Control input)
     {
-        grid.SizeChanged += (sender, e) =>
+        grid.Label = label;
+        grid.Input = input;
+    }
+
+    private sealed class OptionRowGrid : Grid
+    {
+        public Control Label { get; set; }
+        public Control Input { get; set; }
+
+        private bool _stacked;
+
+        protected override Size MeasureOverride(Size availableSize)
         {
-            if (sender is not Grid currentGrid) return;
-            double totalMinWidth = currentGrid.Children.Sum(c => c is Control ctrl ? ctrl.MinWidth : 0);
-            double availableWidth = currentGrid.Bounds.Width - currentGrid.Margin.Left - currentGrid.Margin.Right;
+            if (Label == null || Input == null)
+                return base.MeasureOverride(availableSize);
 
-             // Responsive Switch
-            if (availableWidth < totalMinWidth * 0.8)
+            // Measure the full label, including its icon, help button and margins.
+            // availableSize already excludes this grid's margin.
+            Label.Measure(Size.Infinity);
+            var labelWidth = Label.DesiredSize.Width;
+            var inputWidth = Math.Max(Input.MinWidth, Input.Width is > 0 ? Input.Width : 0)
+                + Input.Margin.Left + Input.Margin.Right;
+            var stacked = labelWidth > availableSize.Width * 5 / 11
+                || inputWidth > availableSize.Width * 6 / 11;
+
+            if (stacked != _stacked)
             {
-                currentGrid.ColumnDefinitions.Clear();
-                currentGrid.RowDefinitions.Clear();
-                currentGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                currentGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                _stacked = stacked;
+                ColumnDefinitions.Clear();
+                RowDefinitions.Clear();
 
-                Grid.SetRow(label, 0);
-                Grid.SetRow(input, 1);
-                Grid.SetColumn(label, 0);
-                Grid.SetColumn(input, 0);
-            }
-            else
-            {
-                currentGrid.RowDefinitions.Clear();
-                currentGrid.ColumnDefinitions.Clear();
-                currentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5, GridUnitType.Star) });
-                currentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6, GridUnitType.Star) });
+                if (stacked)
+                {
+                    ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Star });
+                    RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                }
+                else
+                {
+                    ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5, GridUnitType.Star) });
+                    ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6, GridUnitType.Star) });
+                }
 
-                Grid.SetRow(label, 0);
-                Grid.SetRow(input, 0);
-                Grid.SetColumn(label, 0);
-                Grid.SetColumn(input, 1);
+                RowSpacing = stacked ? 4 : 0;
+                Grid.SetRow(Label, 0);
+                Grid.SetRow(Input, stacked ? 1 : 0);
+                Grid.SetColumn(Label, 0);
+                Grid.SetColumn(Input, stacked ? 0 : 1);
             }
-        };
+
+            return base.MeasureOverride(availableSize);
+        }
     }
 
     // Logic Helpers

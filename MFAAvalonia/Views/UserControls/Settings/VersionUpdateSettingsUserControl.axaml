@@ -83,25 +83,6 @@
         </suki:GlassCard>
         <suki:GlassCard Padding="25,15,25,15">
             <StackPanel Spacing="10">
-                <TextBlock
-                    Text="{x:Static helper:VersionChecker.UiUpdateSource}"
-                    TextWrapping="Wrap" />
-                <DockPanel>
-                    <ComboBox
-                        DockPanel.Dock="Right"
-                        ItemsSource="{Binding UIUpdateChannelList}"
-                        DisplayMemberBinding="{Binding Name}" Width="215"
-                        SelectedIndex="{Binding UIUpdateChannelIndex}"
-                        IsEnabled="{Binding !IsUpdating, Source={x:Static helper:Instances.RootViewModel}}"
-                        VerticalAlignment="Top" />
-                    <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center">
-                        <TextBlock
-                            FontSize="16"
-                            FontWeight="SemiBold"
-                            Text="{markup:I18n {x:Static helper:LangKeys.UIUpdateChannel}}"
-                            VerticalAlignment="Center" />
-                    </StackPanel>
-                </DockPanel>
                 <DockPanel>
                     <ComboBox
                         DockPanel.Dock="Right"
@@ -279,47 +260,10 @@
                             VerticalAlignment="Center" />
                     </StackPanel>
                 </DockPanel>
-                <DockPanel IsVisible="False">
-                    <ToggleSwitch
-                        Classes="Switch"
-                        DockPanel.Dock="Right"
-                        IsChecked="{Binding EnableAutoUpdateMFA}"
-                        IsEnabled="{Binding Idle, Source={x:Static helper:Instances.RootViewModel}}"
-                        VerticalAlignment="Top" />
-                    <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center">
-                        <TextBlock
-                            FontSize="16"
-                            FontWeight="SemiBold"
-                            Text="{markup:I18n {x:Static helper:LangKeys.AutomaticUpdateMFA}}"
-                            VerticalAlignment="Center" />
-                    </StackPanel>
-                </DockPanel>
             </StackPanel>
         </suki:GlassCard>
         <suki:GlassCard Padding="25,15,25,15">
             <StackPanel Spacing="15">
-                <DockPanel>
-                    <Button
-                        BorderBrush="Transparent"
-                        BorderThickness="0"
-                        Command="{Binding CheckMFAUpdateCommand}"
-                        Content="{fluent:FluentIcon Icon=ArrowRepeatAll,
-                                                          IconSize=Size16}"
-                        IsEnabled="{calcBinding:Binding '!IsUpdating and Idle',
-                                                        Source={x:Static helper:Instances.RootViewModel}}"
-                        DockPanel.Dock="Right"
-                        Height="40"
-                        HorizontalAlignment="Center"
-                        Margin="0,0,4,0"
-                        ToolTip.Tip="{markup:I18n {x:Static helper:LangKeys.CheckMFA}}" />
-                    <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center">
-                        <TextBlock
-                            FontSize="16"
-                            FontWeight="SemiBold"
-                            Text="{markup:I18n {x:Static helper:LangKeys.CheckMFA}}"
-                            VerticalAlignment="Center" />
-                    </StackPanel>
-                </DockPanel>
                 <DockPanel>
                     <Button
                         BorderBrush="Transparent"
@@ -339,28 +283,6 @@
                             FontSize="16"
                             FontWeight="SemiBold"
                             Text="{markup:I18n {x:Static helper:LangKeys.CheckResource}}"
-                            VerticalAlignment="Center" />
-                    </StackPanel>
-                </DockPanel>
-                <DockPanel>
-                    <Button
-                        BorderBrush="Transparent"
-                        BorderThickness="0"
-                        Command="{Binding UpdateMFACommand}"
-                        Content="{fluent:FluentIcon Icon=ArrowRepeatAll,
-                                                          IconSize=Size16}"
-                        IsEnabled="{calcBinding:Binding '!IsUpdating and Idle',
-                                                        Source={x:Static helper:Instances.RootViewModel}}"
-                        DockPanel.Dock="Right"
-                        Height="40"
-                        HorizontalAlignment="Center"
-                        Margin="0,0,4,0"
-                        ToolTip.Tip="{markup:I18n {x:Static helper:LangKeys.SoftwareUpdate}}" />
-                    <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center">
-                        <TextBlock
-                            FontSize="16"
-                            FontWeight="SemiBold"
-                            Text="{markup:I18n {x:Static helper:LangKeys.SoftwareUpdate}}"
                             VerticalAlignment="Center" />
                     </StackPanel>
                 </DockPanel>

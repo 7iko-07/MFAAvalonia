@@ -91,18 +91,7 @@ public partial class RootViewModel : ViewModelBase
         Idle = isIdle;
     }
 
-    public static string Version
-    {
-        get
-        {
-            // var version = Assembly.GetExecutingAssembly().GetName().Version;
-            // var major = version.Major;
-            // var minor = version.Minor >= 0 ? version.Minor : 0;
-            // var patch = version.Build >= 0 ? version.Build : 0;
-            // return $"v{SemVersion.Parse($"{major}.{minor}.{patch}")}";
-            return "v2.12.2-beta.2"; // Hardcoded version for now, replace with dynamic versioning later
-        }
-    }
+    public static string Version => AppVersion.Current;
 
     [ObservableProperty] private Action? _tempResourceUpdateAction;
    

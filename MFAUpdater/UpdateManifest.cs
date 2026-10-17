@@ -47,12 +47,12 @@ public sealed class UpdateManifest
             throw new InvalidDataException("更新清单缺少文件列表。");
         ValidateFiles(Files);
         ValidateFiles(BaseFiles);
-        var target = Files.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var payload = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var target = Files.Select(f => f.Path).ToHashSet(UpdatePaths.Comparer);
+        var payload = new HashSet<string>(UpdatePaths.Comparer);
         foreach (var path in Payload)
             if (!UpdatePaths.IsManaged(path) || !target.Contains(path) || !payload.Add(path))
                 throw new InvalidDataException($"无效的更新文件：{path}");
-        var deleted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var deleted = new HashSet<string>(UpdatePaths.Comparer);
         foreach (var path in Deleted)
             if (!UpdatePaths.IsManaged(path) || target.Contains(path) || !deleted.Add(path))
                 throw new InvalidDataException($"无效的删除文件：{path}");
@@ -62,7 +62,7 @@ public sealed class UpdateManifest
         {
             if (string.IsNullOrWhiteSpace(BaseVersion) || BaseFiles.Count == 0)
                 throw new InvalidDataException("增量包缺少基准版本。");
-            var baseline = BaseFiles.ToDictionary(f => f.Path, StringComparer.OrdinalIgnoreCase);
+            var baseline = BaseFiles.ToDictionary(f => f.Path, UpdatePaths.Comparer);
             foreach (var file in Files)
                 if (!payload.Contains(file.Path) && (!baseline.TryGetValue(file.Path, out var old)
                     || old.Sha256 != file.Sha256 || old.Mode != file.Mode || old.LinkTarget != file.LinkTarget))
@@ -74,7 +74,7 @@ public sealed class UpdateManifest
 
     private static void ValidateFiles(List<UpdateFile> files)
     {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(UpdatePaths.Comparer);
         foreach (var file in files)
             if (file == null || !UpdatePaths.IsManaged(file.Path) || !seen.Add(file.Path) || file.Size < 0
                 || file.Sha256?.Length != 64 || !file.Sha256.All(Uri.IsHexDigit)
@@ -90,7 +90,7 @@ public sealed class UpdateManifest
                 throw new InvalidDataException($"符号链接越界：{file.Path}");
             var root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "mfa-link-validation"));
             var destination = Path.GetFullPath(Path.Combine(root, Path.GetDirectoryName(file.Path) ?? "", link));
-            if (!destination.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            if (!destination.StartsWith(root + Path.DirectorySeparatorChar, UpdatePaths.Comparison)
                 || !UpdatePaths.IsManaged(Path.GetRelativePath(root, destination).Replace('\\', '/')))
                 throw new InvalidDataException($"符号链接越界：{file.Path}");
         }
@@ -165,6 +165,38 @@ public sealed class UpdateFile
 
 public static class UpdatePaths
 {
+    public static StringComparison Comparison => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    public static StringComparer Comparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+    // Dependency discovery must not follow aliases (lib64 -> lib), junctions,
+    // external directories or cycles. Keep hidden metadata visible and report
+    // access errors rather than silently treating an incomplete scan as valid.
+    public static EnumerationOptions DependencyScanOptions => new()
+    {
+        RecurseSubdirectories = true,
+        AttributesToSkip = FileAttributes.ReparsePoint,
+        IgnoreInaccessible = false,
+        MatchType = MatchType.Simple,
+        MatchCasing = MatchCasing.PlatformDefault
+    };
+
+    public static void EnsureDistinctOnFileSystem(string root, IEnumerable<string> paths)
+    {
+        var names = paths.Distinct(StringComparer.Ordinal).ToArray();
+        if (names.Distinct(StringComparer.OrdinalIgnoreCase).Count() == names.Length) return;
+        if (OperatingSystem.IsWindows()) throw new InvalidDataException("目标文件路径存在大小写冲突。");
+        // macOS volumes may be case-sensitive or case-insensitive. Check the
+        // destination before any package files are changed, including deletions.
+        var probe = Path.Combine(root, ".mfa-update-case-" + Guid.NewGuid().ToString("N") + "-a");
+        try
+        {
+            using (new FileStream(probe, FileMode.CreateNew, FileAccess.Write)) { }
+            if (File.Exists(probe[..^1] + "A"))
+                throw new InvalidDataException("更新包包含大小写不同的独立文件，安装目录需要区分大小写的文件系统。");
+        }
+        finally { File.Delete(probe); }
+    }
+
     public static bool IsData(string path) => path.StartsWith("resource/", StringComparison.OrdinalIgnoreCase)
         || path.StartsWith("agent/", StringComparison.OrdinalIgnoreCase)
         || path is "interface.json" or "interface.jsonc" or UpdateManifest.FileName;

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InformationalVersion>9.8.7-beta.2+fixture</InformationalVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../MFAAvalonia/Helper/AppVersion.cs" Link="AppVersion.cs" />
+    <PackageReference Include="Semver" Version="3.0.0" />
+  </ItemGroup>
+</Project>

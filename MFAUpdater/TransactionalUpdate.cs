@@ -25,7 +25,7 @@ public sealed class TransactionalUpdate(Action<string>? log = null, Action<int>?
         var committed = false;
         try
         {
-            var operations = plan.Manifest.Payload.Concat(plan.Deleted).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var operations = plan.Manifest.Payload.Concat(plan.Deleted).Distinct(UpdatePaths.Comparer).ToList();
             // Write version metadata last; it participates in rollback until verification passes.
             operations.RemoveAll(p => p is "interface.json" or "interface.jsonc");
             operations.AddRange(plan.Manifest.Payload.Concat(plan.Deleted).Where(p => p is "interface.json" or "interface.jsonc"));
@@ -55,7 +55,7 @@ public sealed class TransactionalUpdate(Action<string>? log = null, Action<int>?
                     var content = JsonSerializer.Serialize(plan.Manifest.AsInstalled(), UpdateManifest.JsonOptions);
                     AtomicWrite(target, path => File.WriteAllText(path, content));
                 }
-                else if (plan.Deleted.Contains(relative, StringComparer.OrdinalIgnoreCase))
+                else if (plan.Deleted.Contains(relative, UpdatePaths.Comparer))
                     Retry(() =>
                     {
                         DeleteFile(target);
@@ -191,17 +191,20 @@ public sealed class TransactionalUpdate(Action<string>? log = null, Action<int>?
         if (plan.SourceRoot == plan.InstallRoot || plan.SourceRoot == plan.DataRoot
             || plan.BackupRoot == plan.InstallRoot || plan.BackupRoot == plan.DataRoot)
             throw new InvalidDataException("更新源、目标和备份不能重合。");
-        if (!Path.GetFullPath(plan.RestartPath).StartsWith(plan.InstallRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-            || !Path.GetFullPath(plan.PreviousRestartPath).StartsWith(plan.InstallRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        if (!Path.GetFullPath(plan.RestartPath).StartsWith(plan.InstallRoot + Path.DirectorySeparatorChar, UpdatePaths.Comparison)
+            || !Path.GetFullPath(plan.PreviousRestartPath).StartsWith(plan.InstallRoot + Path.DirectorySeparatorChar, UpdatePaths.Comparison))
             throw new InvalidDataException("重启程序不在安装目录中。");
         foreach (var relative in plan.Deleted)
-            if (!UpdatePaths.IsManaged(relative) || plan.Manifest.Files.Any(f => f.Path.Equals(relative, StringComparison.OrdinalIgnoreCase)))
+            if (!UpdatePaths.IsManaged(relative) || plan.Manifest.Files.Any(f => f.Path.Equals(relative, UpdatePaths.Comparison)))
                 throw new InvalidDataException($"删除文件不符合更新清单：{relative}");
         foreach (var directory in plan.EmptyDirectories)
             if (!UpdatePaths.IsManaged(directory) || !directory.Split('/').Any(p => p.EndsWith(".dist-info", StringComparison.OrdinalIgnoreCase))
-                || plan.Manifest.Files.Any(f => f.Path.StartsWith(directory + "/", StringComparison.OrdinalIgnoreCase)))
+                || plan.Manifest.Files.Any(f => f.Path.StartsWith(directory + "/", UpdatePaths.Comparison)))
                 throw new InvalidDataException($"空目录不符合更新清单：{directory}");
         foreach (var file in plan.Manifest.Files) _ = plan.Target(file.Path);
+        var paths = plan.Manifest.Files.Select(f => f.Path).Concat(plan.Deleted).ToArray();
+        UpdatePaths.EnsureDistinctOnFileSystem(plan.InstallRoot, paths.Where(p => !UpdatePaths.IsData(p)));
+        UpdatePaths.EnsureDistinctOnFileSystem(plan.DataRoot, paths.Where(UpdatePaths.IsData));
     }
 
     private static void VerifyPythonDependencies(UpdatePlan plan)
@@ -210,7 +213,7 @@ public sealed class TransactionalUpdate(Action<string>? log = null, Action<int>?
         using var json = JsonDocument.Parse(File.ReadAllText(plan.Target("python-dependencies.json")));
         var python = Path.Combine(plan.InstallRoot, "python");
         if (!Directory.Exists(python)) throw new InvalidDataException("Python 环境缺失。");
-        var metadata = Directory.EnumerateFiles(python, "METADATA", SearchOption.AllDirectories)
+        var metadata = Directory.EnumerateFiles(python, "METADATA", UpdatePaths.DependencyScanOptions)
             .Select(p => Path.GetRelativePath(plan.InstallRoot, p).Replace('\\', '/'))
             .Where(p => p.EndsWith(".dist-info/METADATA", StringComparison.OrdinalIgnoreCase)).ToArray();
         foreach (var package in json.RootElement.GetProperty("packages").EnumerateObject())
@@ -219,7 +222,7 @@ public sealed class TransactionalUpdate(Action<string>? log = null, Action<int>?
             var expected = package.Value.GetString();
             // importlib.metadata discovers *.dist-info directories even when
             // METADATA is missing. An empty old directory can mask the new version.
-            var candidates = Directory.EnumerateDirectories(python, "*.dist-info", SearchOption.AllDirectories)
+            var candidates = Directory.EnumerateDirectories(python, "*.dist-info", UpdatePaths.DependencyScanOptions)
                 .Count(directory =>
                 {
                     var name = Path.GetFileName(directory);
@@ -268,7 +271,7 @@ public sealed class TransactionalUpdate(Action<string>? log = null, Action<int>?
     {
         for (var directory = Path.GetDirectoryName(path); directory != null && directory != root; directory = Path.GetDirectoryName(directory))
         {
-            if (!directory.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            if (!directory.StartsWith(root + Path.DirectorySeparatorChar, UpdatePaths.Comparison))
                 throw new InvalidDataException("清理目录越界。");
             if (!Directory.Exists(directory) || Directory.EnumerateFileSystemEntries(directory).Any()) break;
             Directory.Delete(directory);

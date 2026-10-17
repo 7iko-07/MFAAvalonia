@@ -132,10 +132,31 @@ jobs:
           NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
 
       - name: Build Solution
-        run: dotnet publish MFAAvalonia.Desktop/MFAAvalonia.Desktop.csproj -c Release -r ${{ matrix.platform }}-${{ matrix.arch }}
+        shell: bash
+        env:
+          MFA_RELEASE_TAG: ${{ needs.meta.outputs.tag }}
+          MFA_IS_RELEASE: ${{ needs.meta.outputs.is_release }}
+        run: |
+          version_args=()
+          if [[ "$MFA_IS_RELEASE" == "true" ]]; then
+            version_args+=("-p:MfaVersion=${MFA_RELEASE_TAG#v}")
+          fi
+          dotnet publish MFAAvalonia.Desktop/MFAAvalonia.Desktop.csproj -c Release -r ${{ matrix.platform }}-${{ matrix.arch }} "${version_args[@]}"
 
       - name: Publish independent updater
         run: dotnet publish MFAUpdater/MFAUpdater.csproj -c Release -r ${{ matrix.platform }}-${{ matrix.arch }} -o bin/AnyCPU/Release/${{ matrix.platform }}-${{ matrix.arch }}/publish
+
+      - name: Verify application version
+        shell: bash
+        env:
+          MFA_RELEASE_TAG: ${{ needs.meta.outputs.tag }}
+          MFA_IS_RELEASE: ${{ needs.meta.outputs.is_release }}
+        run: |
+          verify_args=()
+          if [[ "$MFA_IS_RELEASE" == "true" ]]; then
+            verify_args+=(--verify "bin/AnyCPU/Release/${{ matrix.platform }}-${{ matrix.arch }}/publish/libs/MFAAvalonia.Core.dll" "$MFA_RELEASE_TAG")
+          fi
+          dotnet run --project tests/Version.SmokeTests/Version.SmokeTests.csproj -c Release -- "${verify_args[@]}"
 
       - name: Sign macOS App with Adhoc Certificate
         if: ${{ matrix.is_macos == true }} 

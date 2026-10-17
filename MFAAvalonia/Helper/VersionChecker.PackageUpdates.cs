@@ -72,13 +72,14 @@ public static partial class VersionChecker
             var selectedUrl = fullUrl;
             var selectedHash = fullHash;
             var selectedDelta = false;
+            GithubActionsDelta? actionsDelta = null;
             if (!isLocal && isGithub && currentVersion != "v0.0.0")
             {
-                var delta = await TryFindGithubDeltaAsync(repository[0], repository[1], latestVersion, localVersion, fullUrl);
+                var delta = await TryFindGithubDeltaAsync(repository[0], repository[1], latestVersion, localVersion, fullUrl, fullHash);
                 if (delta != null)
                 {
-                    selectedUrl = delta.Value.Url;
-                    selectedHash = delta.Value.Hash;
+                    actionsDelta = delta;
+                    selectedHash = delta.Sha256;
                     selectedDelta = true;
                     LoggerHelper.Info($"使用 GitHub 增量包：{localVersion} -> {latestVersion}");
                 }
@@ -88,15 +89,25 @@ public static partial class VersionChecker
                 var startingInstallation = false;
                 try
                 {
-                    var extension = GetFileExtensionFromUrl(selectedUrl);
+                    var extension = selectedDelta ? ".zip" : GetFileExtensionFromUrl(selectedUrl);
                     if (string.IsNullOrEmpty(extension)) extension = ".zip";
                     var archive = isLocal ? localPackagePath! : Path.Combine(session, $"package-{attempt}{extension}");
                     if (!isLocal)
                     {
                         SetText(status, selectedDelta ? "正在下载改动文件" : LangKeys.Downloading.ToLocalization());
-                        var download = await DownloadWithRetry(selectedUrl, archive, progress, 3);
-                        if (!download.Item1) throw new IOException("更新包下载失败。");
-                        archive = download.Item2;
+                        if (selectedDelta)
+                        {
+                            using var client = CreateHttpClientWithProxy(allowAutoRedirect: false);
+                            var source = new GithubActionsUpdateSource(client, Instances.VersionUpdateSettingsUserControlModel.GitHubToken);
+                            await source.DownloadDeltaAsync(repository[0], repository[1], actionsDelta!, archive,
+                                value => SetProgress(progress, value));
+                        }
+                        else
+                        {
+                            var download = await DownloadWithRetry(selectedUrl, archive, progress, 3);
+                            if (!download.Item1) throw new IOException("更新包下载失败。");
+                            archive = download.Item2;
+                        }
                         if (!string.IsNullOrEmpty(selectedHash) && !await VerifyFileSha256Async(archive, selectedHash))
                             throw new InvalidDataException("更新包 SHA-256 校验失败。");
                     }
@@ -110,7 +121,9 @@ public static partial class VersionChecker
                     manifest = File.Exists(Path.Combine(root, UpdateManifest.FileName)) ? UpdateManifest.Read(Path.Combine(root, UpdateManifest.FileName)) : manifest;
                     if (selectedDelta && (manifest?.Kind != "delta" || manifest.BaseVersion != localVersion || manifest.Version != latestVersion))
                         throw new InvalidDataException("增量包的目标或基准版本不符合当前更新。");
-                    var plan = CreatePackageUpdatePlan(root, manifest, latestVersion, session, incremental);
+                    var prefix = Path.GetRelativePath(extracted, root).Replace('\\', '/');
+                    var plan = CreatePackageUpdatePlan(root, manifest, latestVersion, session, incremental,
+                        archivePath: archive, archivePrefix: prefix == "." ? "" : prefix + "/");
                     TransactionalUpdate.VerifyPayload(plan);
                     if (plan.Manifest.Kind == "delta") TransactionalUpdate.VerifyBaseline(plan);
                     if (IsEnvEnabled(ResourceUpdateDebugEnv) && IsEnvEnabled(ResourceUpdateDryRunEnv))
@@ -148,33 +161,16 @@ public static partial class VersionChecker
         }
     }
 
-    private static async Task<(string Url, string Hash)?> TryFindGithubDeltaAsync(string owner, string repository,
-        string version, string baseline, string fullUrl)
+    private static async Task<GithubActionsDelta?> TryFindGithubDeltaAsync(string owner, string repository,
+        string version, string baseline, string fullUrl, string fullHash)
     {
         try
         {
-            using var client = CreateHttpClientWithProxy();
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("MFAComponentUpdater/1.0");
             var token = Instances.VersionUpdateSettingsUserControlModel.GitHubToken;
-            if (!string.IsNullOrWhiteSpace(token)) client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            var release = JObject.Parse(await client.GetStringAsync($"https://api.github.com/repos/{owner}/{repository}/releases/tags/{Uri.EscapeDataString(version)}"));
-            var assets = release["assets"] as JArray;
-            var indexAsset = assets?.FirstOrDefault(a => a["name"]?.ToString() == "update-index.json");
-            if (indexAsset == null) return null;
-            client.DefaultRequestHeaders.Authorization = null;
-            var index = JObject.Parse(await client.GetStringAsync(indexAsset["browser_download_url"]!.ToString()));
-            if ((int?)index["schema"] != 1 || index["version"]?.ToString() != version) return null;
+            if (string.IsNullOrWhiteSpace(token)) return null;
+            using var client = CreateHttpClientWithProxy(allowAutoRedirect: false);
             var fullName = Uri.UnescapeDataString(Path.GetFileName(new Uri(fullUrl).AbsolutePath));
-            var delta = (index["deltas"] as JArray)?.FirstOrDefault(d => d["fullAsset"]?.ToString() == fullName
-                && d["baseVersion"]?.ToString() == baseline && d["version"]?.ToString() == version);
-            if (delta == null) return null;
-            var asset = assets!.FirstOrDefault(a => a["name"]?.ToString() == delta["asset"]?.ToString());
-            var hash = delta["sha256"]?.ToString() ?? "";
-            if (asset == null || hash.Length != 64 || !hash.All(Uri.IsHexDigit)) return null;
-            var digest = ExtractSha256FromDigest(asset["digest"]?.ToString());
-            if (!string.IsNullOrEmpty(digest) && !digest.Equals(hash, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("增量包校验信息不一致。");
-            return (asset["browser_download_url"]!.ToString(), hash);
+            return await new GithubActionsUpdateSource(client, token).FindDeltaAsync(owner, repository, version, baseline, fullName, fullHash);
         }
         catch (Exception ex)
         {
@@ -190,28 +186,11 @@ public static partial class VersionChecker
             if (!UniversalExtractor.Extract(archive, destination)) throw new InvalidDataException("更新包解压失败。");
             return;
         }
-        Directory.CreateDirectory(destination);
-        using var package = ZipFile.OpenRead(archive);
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in package.Entries)
-        {
-            if (entry.FullName.EndsWith('/')) continue;
-            var relative = entry.FullName;
-            if (!UpdatePaths.IsManaged(relative) && relative != UpdateManifest.FileName) continue;
-            if (!seen.Add(relative)) throw new InvalidDataException($"压缩包包含重复路径：{relative}");
-            var target = UpdatePaths.Resolve(destination, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            entry.ExtractToFile(target);
-            if (!OperatingSystem.IsWindows())
-            {
-                var mode = (entry.ExternalAttributes >> 16) & 511;
-                File.SetUnixFileMode(target, (UnixFileMode)(mode == 0 ? 420 : mode));
-            }
-        }
+        UpdateArchive.ExtractZip(archive, destination);
     }
 
     private static UpdatePlan CreatePackageUpdatePlan(string root, UpdateManifest? manifest, string version,
-        string session, bool incremental = false, bool resourceUpdate = true)
+        string session, bool incremental = false, bool resourceUpdate = true, string? archivePath = null, string archivePrefix = "")
     {
         var hasCompleteFileList = manifest != null || !incremental;
         if (manifest == null)
@@ -223,6 +202,8 @@ public static partial class VersionChecker
                 .Where(f => UpdatePaths.IsManaged(Path.GetRelativePath(root, f).Replace('\\', '/'))
                             && Path.GetFileName(f) != "changes.json")
                 .Select(f => UpdateFile.FromFile(root, f)).ToList();
+            if (archivePath?.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) == true)
+                UpdateArchive.RestoreLinkMetadata(archivePath, archivePrefix, files);
             if (!resourceUpdate)
             {
                 files.RemoveAll(f => UpdatePaths.IsData(f.Path));
@@ -257,7 +238,7 @@ public static partial class VersionChecker
             var changes = JObject.Parse(File.ReadAllText(Path.Combine(root, "changes.json")));
             plan.Deleted.AddRange((changes["deleted"] as JArray)?.Values<string>().Where(p => p != null).Select(p => p!.Replace('\\', '/')) ?? []);
         }
-        var target = manifest.Files.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var target = manifest.Files.Select(f => f.Path).ToHashSet(UpdatePaths.Comparer);
         if (resourceUpdate && !hasCompleteFileList
             && File.Exists(Path.Combine(AppPaths.InstallRoot, "python-dependencies.json"))
             && manifest.Files.Any(f => f.Path.StartsWith("runtimes/", StringComparison.OrdinalIgnoreCase)
@@ -277,12 +258,12 @@ public static partial class VersionChecker
         {
             var python = Path.Combine(AppPaths.InstallRoot, "python");
             if (Directory.Exists(python))
-                foreach (var metadata in Directory.EnumerateDirectories(python, "*.dist-info", SearchOption.AllDirectories))
+                foreach (var metadata in Directory.EnumerateDirectories(python, "*.dist-info", UpdatePaths.DependencyScanOptions))
                 {
                     var metadataPath = Path.GetRelativePath(AppPaths.InstallRoot, metadata).Replace('\\', '/');
-                    var existing = Directory.EnumerateFiles(metadata, "*", SearchOption.AllDirectories).ToArray();
-                    if (hasCompleteFileList && existing.Length == 0 && !target.Any(p => p.StartsWith(metadataPath + "/", StringComparison.OrdinalIgnoreCase)))
-                        plan.EmptyDirectories.AddRange(Directory.EnumerateDirectories(metadata, "*", SearchOption.AllDirectories).Append(metadata)
+                    var existing = Directory.EnumerateFiles(metadata, "*", UpdatePaths.DependencyScanOptions).ToArray();
+                    if (hasCompleteFileList && existing.Length == 0 && !target.Any(p => p.StartsWith(metadataPath + "/", UpdatePaths.Comparison)))
+                        plan.EmptyDirectories.AddRange(Directory.EnumerateDirectories(metadata, "*", UpdatePaths.DependencyScanOptions).Append(metadata)
                             .Select(p => Path.GetRelativePath(AppPaths.InstallRoot, p).Replace('\\', '/')).Where(UpdatePaths.IsManaged));
                     foreach (var file in existing)
                     {
@@ -292,7 +273,7 @@ public static partial class VersionChecker
                     }
                 }
         }
-        plan.Deleted = plan.Deleted.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        plan.Deleted = plan.Deleted.Distinct(UpdatePaths.Comparer).ToList();
         return plan;
     }
 
