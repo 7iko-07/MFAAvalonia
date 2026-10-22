@@ -10,6 +10,23 @@ namespace MFAAvalonia.Helper;
 
 public static class LangKeys
 {
+    public static readonly string AgentDependencyRepairStarted = "AgentDependencyRepairStarted";
+    public static readonly string AgentDependencyRepairStopped = "AgentDependencyRepairStopped";
+    public static readonly string RedeemCodes = "RedeemCodes";
+    public static readonly string RedeemRefresh = "RedeemRefresh";
+    public static readonly string RedeemAll = "RedeemAll";
+    public static readonly string RedeemOne = "RedeemOne";
+    public static readonly string RedeemView = "RedeemView";
+    public static readonly string RedeemBusy = "RedeemBusy";
+    public static readonly string RedeemAvailable = "RedeemAvailable";
+    public static readonly string RedeemNewNotice = "RedeemNewNotice";
+    public static readonly string RedeemNewBadge = "RedeemNewBadge";
+    public static readonly string RedeemExpires = "RedeemExpires";
+    public static readonly string RedeemExpiryUnknown = "RedeemExpiryUnknown";
+    public static readonly string RedeemRunning = "RedeemRunning";
+    public static readonly string RedeemProgress = "RedeemProgress";
+    public static readonly string RedeemNotCompleted = "RedeemNotCompleted";
+
 	public static readonly string About = "About";
 	public static readonly string AdbCaptureMode = "AdbCaptureMode";
 	public static readonly string AdbConfig = "AdbConfig";

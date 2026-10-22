@@ -75,6 +75,7 @@ public partial class TaskQueueViewModel : ViewModelBase
 
         // Re-initialize with the correct processor since base constructor might have used Current
         Initialize();
+        DispatcherHelper.PostOnMainThread(() => _ = RedeemCodes.InitializeAsync());
     }
 
     private string InstanceName => MaaProcessorManager.Instance.GetInstanceName(Processor.InstanceId);
@@ -445,6 +446,7 @@ public partial class TaskQueueViewModel : ViewModelBase
     {
         SubscribeTaskItemCollection(value);
         RebuildTaskItemGroups();
+        _redeemCodes?.UpdateTaskBadges();
         if (ConfigurationManager.IsSwitching) return;
         PersistTaskItemsInDisplayOrder();
     }
@@ -472,6 +474,7 @@ public partial class TaskQueueViewModel : ViewModelBase
     private void OnTaskItemsChangedForGrouping(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (_isApplyingGroupedTaskMove) return;
+        _redeemCodes?.UpdateTaskBadges();
         if (e.Action == NotifyCollectionChangedAction.Move && !ConfigurationManager.IsSwitching)
         {
             // Capture a flat-list reorder before rebuilding from the saved layout.

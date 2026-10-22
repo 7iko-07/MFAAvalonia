@@ -11,5 +11,8 @@
     <Compile Include="../../MFAAvalonia/Helper/UpdateArchive.cs" Link="UpdateArchive.cs" />
     <Compile Include="../../MFAUpdater/UpdateManifest.cs" Link="UpdateManifest.cs" />
     <Compile Include="../../MFAUpdater/TransactionalUpdate.cs" Link="TransactionalUpdate.cs" />
+    <Compile Include="../../MFAUpdater/PythonDependencies.cs" Link="PythonDependencies.cs" />
+    <Compile Include="../../MFAAvalonia/Helper/MirrorPackageUpdate.cs" Link="MirrorPackageUpdate.cs" />
+    <Compile Include="../../MFAAvalonia/Helper/DependencyRepairState.cs" Link="DependencyRepairState.cs" />
   </ItemGroup>
 </Project>

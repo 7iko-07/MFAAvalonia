@@ -2115,6 +2115,54 @@ Please do not copy only the main executable by itself.</value>
   <data name="TaskGroupSelect" xml:space="preserve"><value>Select or deselect all tasks in this group</value></data>
   <data name="TaskMoveToTop" xml:space="preserve"><value>Move to top</value></data>
   <data name="TaskMoveToBottom" xml:space="preserve"><value>Move to bottom</value></data>
+  <data name="RedeemCodes" xml:space="preserve">
+    <value>Redemption codes</value>
+  </data>
+  <data name="RedeemRefresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="RedeemAll" xml:space="preserve">
+    <value>Redeem all</value>
+  </data>
+  <data name="RedeemOne" xml:space="preserve">
+    <value>Redeem</value>
+  </data>
+  <data name="RedeemView" xml:space="preserve">
+    <value>View</value>
+  </data>
+  <data name="RedeemBusy" xml:space="preserve">
+    <value>A task is running. Redeem after it finishes.</value>
+  </data>
+  <data name="RedeemAvailable" xml:space="preserve">
+    <value>{0} codes available</value>
+  </data>
+  <data name="RedeemNewNotice" xml:space="preserve">
+    <value>{0} new redemption codes</value>
+  </data>
+  <data name="RedeemNewBadge" xml:space="preserve">
+    <value>New {0}</value>
+  </data>
+  <data name="RedeemExpires" xml:space="preserve">
+    <value>Expires {0}</value>
+  </data>
+  <data name="RedeemExpiryUnknown" xml:space="preserve">
+    <value>Expiry not specified</value>
+  </data>
+  <data name="RedeemRunning" xml:space="preserve">
+    <value>Redeeming…</value>
+  </data>
+  <data name="RedeemProgress" xml:space="preserve">
+    <value>Processed {0} / {1}</value>
+  </data>
+  <data name="RedeemNotCompleted" xml:space="preserve">
+    <value>Not completed</value>
+  </data>
+  <data name="AgentDependencyRepairStarted" xml:space="preserve">
+    <value>Python dependency errors detected. Downloading the full resource package to repair them. The app will exit and install after validation.</value>
+  </data>
+  <data name="AgentDependencyRepairStopped" xml:space="preserve">
+    <value>Automatic repair was already attempted, but dependencies are still invalid. Check the update error and download the full resource package again in Settings. Automatic repair will not repeat.</value>
+  </data>
 </root>
 
 

@@ -21,9 +21,33 @@ namespace MFAAvalonia.Helper;
 
 public static partial class VersionChecker
 {
+    private static int _packageUpdateActive;
+    internal static string DependencyRepairMarker => Path.Combine(AppPaths.TempDirectory, "agent-dependency-repair.attempt");
+
+    internal static void RequestDependencyRepair()
+    {
+        if (Volatile.Read(ref _packageUpdateActive) != 0) return;
+        try
+        {
+            if (!DependencyRepairState.TryBegin(DependencyRepairMarker))
+            {
+                ToastHelper.Warn(LangKeys.AgentStartFailed.ToLocalization(), LangKeys.AgentDependencyRepairStopped.ToLocalization(), -1);
+                return;
+            }
+            ToastHelper.Info(LangKeys.AgentDependencyRepairStarted.ToLocalization());
+            UpdateResourceAsync("v0.0.0");
+        }
+        catch (Exception ex)
+        {
+            LoggerHelper.Error($"无法发起依赖修复：{ex.Message}", ex);
+            ToastHelper.Error(LangKeys.AgentStartFailed.ToLocalization(), ex.Message);
+        }
+    }
+
     private static async Task UpdateResourceTransactionalAsync(bool isGithub, bool closeDialog, bool noDialog,
         Action? action, string currentVersion, string? localPackagePath)
     {
+        if (Interlocked.CompareExchange(ref _packageUpdateActive, 1, 0) != 0) return;
         shouldShowToast = false;
         Instances.RootViewModel.SetUpdating(true);
         ISukiToast? toast = null;
@@ -46,6 +70,7 @@ public static partial class VersionChecker
             var fullUrl = localPackagePath ?? "";
             var latestVersion = isLocal ? Path.GetFileNameWithoutExtension(localPackagePath!) : "";
             var fullHash = "";
+            var mirrorIncremental = false;
             string[] repository = [];
             if (!isLocal)
             {
@@ -56,7 +81,13 @@ public static partial class VersionChecker
                     var release = await GetLatestVersionAndDownloadUrlFromGithubAsync(repository[0], repository[1], false, "", localVersion);
                     (fullUrl, latestVersion, fullHash) = release;
                 }
-                else GetDownloadUrlFromMirror(localVersion, GetResourceID(), CDK(), out fullUrl, out latestVersion, out fullHash, out _, currentVersion: localVersion);
+                else
+                {
+                    GetDownloadUrlFromMirror(localVersion, GetResourceID(), CDK(), out fullUrl, out latestVersion, out fullHash, out var isFull, currentVersion: localVersion);
+                    mirrorIncremental = !isFull;
+                    if (currentVersion == "v0.0.0" && mirrorIncremental)
+                        throw new InvalidDataException("Mirror 未返回请求的完整修复包。");
+                }
                 if (string.IsNullOrWhiteSpace(latestVersion)) throw new InvalidDataException("无法获取目标资源版本。");
                 if (!IsNewVersionAvailable(latestVersion, localVersion) && currentVersion != "v0.0.0")
                 {
@@ -71,7 +102,8 @@ public static partial class VersionChecker
             Directory.CreateDirectory(session);
             var selectedUrl = fullUrl;
             var selectedHash = fullHash;
-            var selectedDelta = false;
+            var selectedDelta = mirrorIncremental;
+            var requireFull = currentVersion == "v0.0.0";
             GithubActionsDelta? actionsDelta = null;
             if (!isLocal && isGithub && currentVersion != "v0.0.0")
             {
@@ -89,13 +121,13 @@ public static partial class VersionChecker
                 var startingInstallation = false;
                 try
                 {
-                    var extension = selectedDelta ? ".zip" : GetFileExtensionFromUrl(selectedUrl);
+                    var extension = actionsDelta != null ? ".zip" : GetFileExtensionFromUrl(selectedUrl);
                     if (string.IsNullOrEmpty(extension)) extension = ".zip";
                     var archive = isLocal ? localPackagePath! : Path.Combine(session, $"package-{attempt}{extension}");
                     if (!isLocal)
                     {
                         SetText(status, selectedDelta ? "正在下载改动文件" : LangKeys.Downloading.ToLocalization());
-                        if (selectedDelta)
+                        if (actionsDelta != null && selectedDelta)
                         {
                             using var client = CreateHttpClientWithProxy(allowAutoRedirect: false);
                             var source = new GithubActionsUpdateSource(client, Instances.VersionUpdateSettingsUserControlModel.GitHubToken);
@@ -115,17 +147,34 @@ public static partial class VersionChecker
                     ExtractUpdateArchive(archive, extracted);
                     var manifestPath = Path.Combine(extracted, UpdateManifest.FileName);
                     var manifest = File.Exists(manifestPath) ? UpdateManifest.Read(manifestPath) : null;
-                    var incremental = manifest?.Kind == "delta" || (currentVersion != "v0.0.0" && File.Exists(Path.Combine(extracted, "changes.json")));
+                    var incremental = selectedDelta || manifest?.Kind == "delta" || File.Exists(Path.Combine(extracted, "changes.json"));
                     if (!ValidateExtractedResourcePackage(extracted, incremental, out var root, out _, out _, out var message))
                         throw new InvalidDataException(message);
                     manifest = File.Exists(Path.Combine(root, UpdateManifest.FileName)) ? UpdateManifest.Read(Path.Combine(root, UpdateManifest.FileName)) : manifest;
+                    incremental |= manifest?.Kind == "delta" || File.Exists(Path.Combine(root, "changes.json"));
+                    if (requireFull && incremental)
+                        throw new InvalidDataException("完整包请求返回了增量包，已停止安装。");
+                    if (!isLocal && !isGithub && incremental)
+                    {
+                        selectedDelta = true;
+                        manifest = MirrorPackageUpdate.CreateDelta(manifest, root, AppPaths.InstallRoot,
+                            AppPaths.DataRoot, localVersion, latestVersion);
+                    }
+                    if (incremental && manifest == null)
+                        throw new InvalidDataException("增量包缺少完整目标清单，请使用完整包。");
+                    if (!isLocal && manifest != null && manifest.Version != latestVersion)
+                        throw new InvalidDataException("更新清单的版本与下载目标不一致。");
                     if (selectedDelta && (manifest?.Kind != "delta" || manifest.BaseVersion != localVersion || manifest.Version != latestVersion))
                         throw new InvalidDataException("增量包的目标或基准版本不符合当前更新。");
                     var prefix = Path.GetRelativePath(extracted, root).Replace('\\', '/');
                     var plan = CreatePackageUpdatePlan(root, manifest, latestVersion, session, incremental,
                         archivePath: archive, archivePrefix: prefix == "." ? "" : prefix + "/");
+                    if (!isLocal && plan.Manifest.Version != latestVersion)
+                        throw new InvalidDataException("资源包版本与下载目标不一致。");
                     TransactionalUpdate.VerifyPayload(plan);
                     if (plan.Manifest.Kind == "delta") TransactionalUpdate.VerifyBaseline(plan);
+                    if (incremental)
+                        await PythonDependencies.VerifyInstalledAsync(AppPaths.InstallRoot, requireInterpreter: false);
                     if (IsEnvEnabled(ResourceUpdateDebugEnv) && IsEnvEnabled(ResourceUpdateDryRunEnv))
                     {
                         File.WriteAllText(Path.Combine(session, "plan.json"), JsonSerializer.Serialize(plan, UpdateManifest.JsonOptions));
@@ -138,13 +187,22 @@ public static partial class VersionChecker
                     action?.Invoke();
                     return;
                 }
-                catch (Exception ex) when (selectedDelta && !startingInstallation)
+                catch (Exception ex) when (selectedDelta && !isLocal && !startingInstallation && attempt == 0)
                 {
                     LoggerHelper.Warning($"增量更新不可用，回退完整包：{ex.Message}");
                     SetText(status, "增量包不适用，正在下载完整包");
+                    if (!isGithub)
+                    {
+                        GetDownloadUrlFromMirror("v0.0.0", GetResourceID(), CDK(), out fullUrl,
+                            out var fullVersion, out fullHash, out var isFull, currentVersion: localVersion);
+                        if (!isFull || string.IsNullOrWhiteSpace(fullUrl) || fullVersion != latestVersion)
+                            throw new InvalidDataException("Mirror 完整包类型或版本不匹配，请重新检查更新。");
+                    }
                     selectedUrl = fullUrl;
                     selectedHash = fullHash;
                     selectedDelta = false;
+                    actionsDelta = null;
+                    requireFull = true;
                 }
             }
         }
@@ -155,6 +213,7 @@ public static partial class VersionChecker
         }
         finally
         {
+            Interlocked.Exchange(ref _packageUpdateActive, 0);
             Instances.RootViewModel.SetUpdating(false);
             DispatcherHelper.PostOnMainThread(() => Instances.InstanceTabBarViewModel.ActiveTab?.TaskQueueViewModel.ClearDownloadProgress());
             Dismiss(toast);
@@ -253,69 +312,43 @@ public static partial class VersionChecker
                 catch (Exception ex) when (ex is InvalidDataException or JsonException)
                 { LoggerHelper.Warning($"旧安装清单损坏，将使用完整包修复：{ex.Message}"); }
         }
-        // A complete target manifest also describes unchanged dependencies in a delta.
-        if (resourceUpdate && target.Contains("python-dependencies.json"))
-        {
-            var python = Path.Combine(AppPaths.InstallRoot, "python");
-            if (Directory.Exists(python))
-                foreach (var metadata in Directory.EnumerateDirectories(python, "*.dist-info", UpdatePaths.DependencyScanOptions))
-                {
-                    var metadataPath = Path.GetRelativePath(AppPaths.InstallRoot, metadata).Replace('\\', '/');
-                    var existing = Directory.EnumerateFiles(metadata, "*", UpdatePaths.DependencyScanOptions).ToArray();
-                    if (hasCompleteFileList && existing.Length == 0 && !target.Any(p => p.StartsWith(metadataPath + "/", UpdatePaths.Comparison)))
-                        plan.EmptyDirectories.AddRange(Directory.EnumerateDirectories(metadata, "*", UpdatePaths.DependencyScanOptions).Append(metadata)
-                            .Select(p => Path.GetRelativePath(AppPaths.InstallRoot, p).Replace('\\', '/')).Where(UpdatePaths.IsManaged));
-                    foreach (var file in existing)
-                    {
-                        var path = Path.GetRelativePath(AppPaths.InstallRoot, file).Replace('\\', '/');
-                        if (UpdatePaths.IsManaged(path) && !target.Contains(path)
-                            && (hasCompleteFileList || IsObsoletePythonMetadata(metadata, root))) plan.Deleted.Add(path);
-                    }
-                }
-        }
+        PythonDependencies.AddObsoleteMetadata(plan);
         plan.Deleted = plan.Deleted.Distinct(UpdatePaths.Comparer).ToList();
         return plan;
-    }
-
-    private static bool IsObsoletePythonMetadata(string directory, string sourceRoot)
-    {
-        var metadata = Path.Combine(directory, "METADATA");
-        if (!File.Exists(metadata)) return false;
-        var lines = File.ReadAllLines(metadata);
-        var name = lines.FirstOrDefault(l => l.StartsWith("Name: "))?[6..];
-        var installed = lines.FirstOrDefault(l => l.StartsWith("Version: "))?[9..];
-        if (name == null || installed == null) return false;
-        var packages = JObject.Parse(File.ReadAllText(Path.Combine(sourceRoot, "python-dependencies.json")))["packages"] as JObject;
-        var desired = packages?.Properties().FirstOrDefault(p => p.Name.Replace('-', '_').Equals(name.Replace('-', '_'), StringComparison.OrdinalIgnoreCase));
-        return desired != null && desired.Value.ToString() != installed;
     }
 
     private static async Task LaunchPackageUpdaterAsync(UpdatePlan plan, string session)
     {
         var name = OperatingSystem.IsWindows() ? "MFAUpdater.exe" : "MFAUpdater";
-        var candidate = new[] { Path.Combine(plan.SourceRoot, name), Path.Combine(plan.InstallRoot, name), FindUpdaterExecutablePath(plan.InstallRoot) }
-            .FirstOrDefault(File.Exists) ?? throw new FileNotFoundException("缺少安全更新器，请安装包含新版 MFAUpdater 的完整包。");
+        var candidates = new[] { Path.Combine(plan.SourceRoot, name), Path.Combine(plan.InstallRoot, name), FindUpdaterExecutablePath(plan.InstallRoot) }
+            .Where(File.Exists).Distinct(UpdatePaths.Comparer).ToArray();
         var stagedRoot = Path.Combine(session, "updater");
-        Directory.CreateDirectory(stagedRoot);
-        foreach (var file in Directory.EnumerateFiles(Path.GetDirectoryName(candidate)!, Path.GetFileNameWithoutExtension(candidate) + ".*"))
-            File.Copy(file, Path.Combine(stagedRoot, Path.GetFileName(file)), true);
-        var staged = Path.Combine(stagedRoot, Path.GetFileName(candidate));
-        if (!File.Exists(staged)) File.Copy(candidate, staged);
-        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(staged, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        var probeInfo = new ProcessStartInfo(staged) { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
-        probeInfo.ArgumentList.Add("--protocol");
-        using (var probe = Process.Start(probeInfo) ?? throw new IOException("安全更新器无法启动。"))
+        string? staged = null;
+        for (var i = 0; i < candidates.Length; i++)
         {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            try { await probe.WaitForExitAsync(timeout.Token); }
-            catch { if (!probe.HasExited) probe.Kill(true); throw; }
-            if (probe.ExitCode != 0 || (await probe.StandardOutput.ReadToEndAsync()).Trim() != "mfa-update-v1")
-                throw new InvalidDataException("更新器不支持安全安装，请使用包含新版 MFAUpdater 的完整包。");
+            // Probe staged copies, never launch a legacy updater in the install
+            // directory. An older resource package may bundle an older updater.
+            var candidate = candidates[i];
+            var directory = Path.Combine(stagedRoot, i.ToString());
+            Directory.CreateDirectory(directory);
+            foreach (var file in Directory.EnumerateFiles(Path.GetDirectoryName(candidate)!, Path.GetFileNameWithoutExtension(candidate) + ".*"))
+                File.Copy(file, Path.Combine(directory, Path.GetFileName(file)), true);
+            var path = Path.Combine(directory, Path.GetFileName(candidate));
+            if (!File.Exists(path)) File.Copy(candidate, path);
+            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            if (await ProbeUpdaterAsync(path, "--protocol", "mfa-update-v1")
+                && await ProbeUpdaterAsync(path, "--dependency-check-protocol", "mfa-python-check-v1"))
+            {
+                staged = path;
+                break;
+            }
         }
+        if (staged == null)
+            throw new InvalidDataException("缺少支持 Python 依赖校验的更新器，请安装包含新版 MFAUpdater 的完整包。");
         plan.UpdaterPath = staged;
         var planPath = Path.Combine(session, "plan.json");
         File.WriteAllText(planPath, JsonSerializer.Serialize(plan, UpdateManifest.JsonOptions));
-        var start = new ProcessStartInfo(staged) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = stagedRoot };
+        var start = new ProcessStartInfo(staged) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(staged)! };
         start.ArgumentList.Add("--apply-plan");
         start.ArgumentList.Add(planPath);
         using var updater = Process.Start(start) ?? throw new IOException("无法启动独立更新器。");
@@ -330,6 +363,32 @@ public static partial class VersionChecker
         {
             if (!updater.HasExited) updater.Kill(true);
             throw;
+        }
+    }
+
+    private static async Task<bool> ProbeUpdaterAsync(string executable, string argument, string expected)
+    {
+        try
+        {
+            var start = new ProcessStartInfo(executable)
+            {
+                UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
+                CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(executable)!
+            };
+            start.ArgumentList.Add(argument);
+            using var process = Process.Start(start) ?? throw new IOException("安全更新器无法启动。");
+            var output = process.StandardOutput.ReadToEndAsync();
+            var error = process.StandardError.ReadToEndAsync();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            try { await process.WaitForExitAsync(timeout.Token); }
+            catch { if (!process.HasExited) process.Kill(true); throw; }
+            await error;
+            return process.ExitCode == 0 && (await output).Trim() == expected;
+        }
+        catch (Exception ex)
+        {
+            LoggerHelper.Warning($"更新器能力检查失败：{ex.Message}");
+            return false;
         }
     }
 }

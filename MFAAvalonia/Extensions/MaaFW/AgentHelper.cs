@@ -85,6 +85,27 @@ public static class AgentHelper
         if (validConfigs.Count == 0)
             return contexts;
 
+        // Older clients could overlay a full package without deleting the old
+        // dist-info directory. Detect that before creating/connecting any Agent.
+        try
+        {
+            await Task.Run(() => MFAUpdater.PythonDependencies.VerifyInstalledAsync(AppPaths.InstallRoot,
+                cancellationToken: token), token);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException
+            or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
+        {
+            LoggerHelper.Error($"Agent 依赖检查失败：{ex.Message}", ex);
+            processor.AddLog(ex.Message, Avalonia.Media.Brushes.OrangeRed, changeColor: false);
+            ToastHelper.Error(LangKeys.AgentStartFailed.ToLocalization(), ex.Message);
+            VersionChecker.RequestDependencyRepair();
+            return [];
+        }
+        try { DependencyRepairState.Clear(VersionChecker.DependencyRepairMarker); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { LoggerHelper.Warning($"无法清理依赖修复记录：{ex.Message}"); }
+
         processor.AddLogByKey(LangKeys.StartingAgent, (Avalonia.Media.IBrush?)null);
 
         foreach (var agentConfig in validConfigs)
@@ -696,6 +717,20 @@ public static class AgentHelper
     private static void HandleOutputLine(string? line, MaaProcessor processor, string streamKind)
     {
         if (string.IsNullOrEmpty(line)) return;
+
+        if (line.StartsWith("MFA_REDEEM:", StringComparison.Ordinal))
+        {
+            try
+            {
+                var message = Newtonsoft.Json.Linq.JObject.Parse(line[11..]);
+                DispatcherHelper.PostOnMainThread(() => processor.ViewModel?.RedeemCodes.HandleMessage(message));
+            }
+            catch (Newtonsoft.Json.JsonException ex)
+            {
+                LoggerHelper.Warning($"兑换码结果消息无效：{ex.Message}");
+            }
+            return;
+        }
 
         var outData = line;
         try { outData = Regex.Replace(outData, @"\x1B\[[0-9;]*[a-zA-Z]", ""); }

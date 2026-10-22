@@ -9,6 +9,7 @@
              xmlns:binding="clr-namespace:MaaFramework.Binding;assembly=MaaFramework.Binding"
              xmlns:calcBinding="clr-namespace:CalcBinding;assembly=CalcBindingAva"
              xmlns:converters="clr-namespace:MFAAvalonia.Helper.Converters"
+             xmlns:avaConverters="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:ex="clr-namespace:SukiUI.Extensions;assembly=SukiUI"
              xmlns:valueType="clr-namespace:MFAAvalonia.Helper.ValueType"
@@ -58,7 +59,7 @@
                               IsEnabled="{Binding !IsResourceOptionItem}"
                               IsChecked="{Binding IsCheckedWithNull}" />
                     <Grid Grid.Column="1"
-                          ColumnDefinitions="Auto,*"
+                          ColumnDefinitions="Auto,*,Auto"
                           Background="Transparent"
                           MinWidth="0"
                           VerticalAlignment="Center">
@@ -73,6 +74,12 @@
                                    TextTrimming="CharacterEllipsis"
                                    TextWrapping="NoWrap"
                                    VerticalAlignment="Center" />
+                        <Border Grid.Column="2" Margin="6,0,0,0" Padding="5,2" CornerRadius="6"
+                                Background="{DynamicResource SukiCardBackground}"
+                                IsVisible="{Binding RedeemCodeBadge, Converter={x:Static avaConverters:StringConverters.IsNotNullOrEmpty}}">
+                            <TextBlock Text="{Binding RedeemCodeBadge}" FontSize="10"
+                                       Foreground="{DynamicResource SukiPrimaryColor}" />
+                        </Border>
                     </Grid>
                     <RadioButton Classes="Icon"
                                  Background="Transparent"
@@ -1100,7 +1107,8 @@
                         </RadioButton>
                     </StackPanel>
                 </dashboard:DashboardCard.HeaderActions>
-                <ScrollViewer x:Name="SettingsContent"
+                <Grid>
+                <ScrollViewer IsVisible="{Binding !RedeemCodes.IsOpen}" x:Name="SettingsContent"
                               HorizontalAlignment="Stretch"
                               VerticalAlignment="Stretch"
                               VerticalScrollBarVisibility="Auto"
@@ -1115,6 +1123,10 @@
                                     Orientation="Vertical" />
                     </Grid>
                 </ScrollViewer>
+                <ScrollViewer IsVisible="{Binding RedeemCodes.IsOpen}">
+                    <controls:RedeemCodePanel DataContext="{Binding RedeemCodes}" />
+                </ScrollViewer>
+                </Grid>
             </dashboard:DashboardCard>
 
             <dashboard:DashboardCard x:Name="TaskListCard"
@@ -1247,8 +1259,21 @@
                         </Button>
                     </StackPanel>
                 </dashboard:DashboardCard.HeaderActions>
-                <Grid>
-                    <ScrollViewer Margin="0,3,0,0"
+                <Grid RowDefinitions="Auto,*">
+                    <Border Margin="0,0,0,6" Padding="10,6" CornerRadius="8"
+                            Background="{DynamicResource SukiCardBackground}"
+                            BorderBrush="{DynamicResource SukiPrimaryColor}" BorderThickness="1"
+                            IsVisible="{Binding RedeemCodes.Feed.ShowNotice}">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+                            <TextBlock Text="{Binding RedeemCodes.Notice}" TextWrapping="Wrap"
+                                       FontSize="12" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Classes="Basic" Command="{Binding RedeemCodes.OpenCommand}"
+                                    Content="{markup:I18n {x:Static helper:LangKeys.RedeemView}}" />
+                            <Button Grid.Column="2" Classes="Basic" Command="{Binding RedeemCodes.DismissCommand}"
+                                    Content="×" ToolTip.Tip="{markup:I18n {x:Static helper:LangKeys.Close}}" />
+                        </Grid>
+                    </Border>
+                    <ScrollViewer Grid.Row="1" Margin="0,3,0,0"
                                   MinHeight="150"
                                   HorizontalAlignment="Stretch"
                                   VerticalScrollBarVisibility="Auto"
@@ -1353,7 +1378,7 @@
                         </ItemsControl>
                     </ScrollViewer>
 
-                    <ListBox Classes="Fluent"
+                    <ListBox Grid.Row="1" Classes="Fluent"
                              DragDrop.AllowDrop="{Binding Idle,Source={x:Static helper:Instances.RootViewModel}}"
                              extensions:DragDropExtensions.EnableDragDrop="True"
                              extensions:DragDropExtensions.DragStartThreshold="2"

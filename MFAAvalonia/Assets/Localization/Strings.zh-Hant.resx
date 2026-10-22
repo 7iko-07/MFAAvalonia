@@ -2103,6 +2103,54 @@
   <data name="TaskGroupSelect" xml:space="preserve"><value>全選或取消全選組內任務</value></data>
   <data name="TaskMoveToTop" xml:space="preserve"><value>置頂</value></data>
   <data name="TaskMoveToBottom" xml:space="preserve"><value>置底</value></data>
+  <data name="RedeemCodes" xml:space="preserve">
+    <value>兌換碼</value>
+  </data>
+  <data name="RedeemRefresh" xml:space="preserve">
+    <value>重新整理</value>
+  </data>
+  <data name="RedeemAll" xml:space="preserve">
+    <value>全部兌換</value>
+  </data>
+  <data name="RedeemOne" xml:space="preserve">
+    <value>兌換</value>
+  </data>
+  <data name="RedeemView" xml:space="preserve">
+    <value>查看</value>
+  </data>
+  <data name="RedeemBusy" xml:space="preserve">
+    <value>任務執行中，請結束後兌換</value>
+  </data>
+  <data name="RedeemAvailable" xml:space="preserve">
+    <value>目前可用 {0} 個</value>
+  </data>
+  <data name="RedeemNewNotice" xml:space="preserve">
+    <value>發現 {0} 個新兌換碼</value>
+  </data>
+  <data name="RedeemNewBadge" xml:space="preserve">
+    <value>新 {0}</value>
+  </data>
+  <data name="RedeemExpires" xml:space="preserve">
+    <value>{0} 到期</value>
+  </data>
+  <data name="RedeemExpiryUnknown" xml:space="preserve">
+    <value>有效期未註明</value>
+  </data>
+  <data name="RedeemRunning" xml:space="preserve">
+    <value>兌換中…</value>
+  </data>
+  <data name="RedeemProgress" xml:space="preserve">
+    <value>已處理 {0} / {1}</value>
+  </data>
+  <data name="RedeemNotCompleted" xml:space="preserve">
+    <value>未完成</value>
+  </data>
+  <data name="AgentDependencyRepairStarted" xml:space="preserve">
+    <value>偵測到 Python 相依套件異常，正在下載完整資源包修復。驗證通過後將自動結束程式並安裝。</value>
+  </data>
+  <data name="AgentDependencyRepairStopped" xml:space="preserve">
+    <value>已嘗試自動修復，相依套件仍異常。請查看更新錯誤，並在設定中重新下載完整資源包；不會重複自動修復。</value>
+  </data>
 </root>
 
 

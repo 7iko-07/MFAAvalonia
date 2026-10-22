@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:MFAAvalonia.ViewModels.Other"
+             xmlns:helper="clr-namespace:MFAAvalonia.Helper"
+             xmlns:markup="https://codewf.com"
+             xmlns:converters="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             x:Class="MFAAvalonia.Views.UserControls.RedeemCodePanel"
+             x:DataType="vm:RedeemCodePanelViewModel">
+    <StackPanel Margin="10" Spacing="12">
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+            <TextBlock Text="{markup:I18n {x:Static helper:LangKeys.RedeemCodes}}"
+                       FontSize="16" FontWeight="DemiBold" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="1" Text="{Binding Summary}" FontSize="12"
+                       Foreground="{DynamicResource SukiLowText}" />
+            <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6">
+                <Button Classes="Basic" Command="{Binding RefreshCommand}" IsEnabled="{Binding !Feed.IsLoading}"
+                        Content="{markup:I18n {x:Static helper:LangKeys.RedeemRefresh}}" />
+                <Button Classes="Flat" Command="{Binding RedeemAllCommand}"
+                        Content="{markup:I18n {x:Static helper:LangKeys.RedeemAll}}" />
+            </StackPanel>
+        </Grid>
+        <TextBlock Text="{markup:I18n {x:Static helper:LangKeys.RedeemBusy}}" TextWrapping="Wrap"
+                   IsVisible="{Binding IsTaskRunning}" Foreground="{DynamicResource SukiLowText}" FontSize="12" />
+        <TextBlock Text="{Binding Feed.Error}" IsVisible="{Binding Feed.Error, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}"
+                   TextWrapping="Wrap" Foreground="{DynamicResource SukiDangerColor}" />
+        <TextBlock Text="{Binding Progress}" IsVisible="{Binding Progress, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}"
+                   FontSize="12" Foreground="{DynamicResource SukiLowText}" />
+        <ItemsControl ItemsSource="{Binding Codes}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:RedeemCodeRow">
+                    <Border Margin="0,0,0,8" Padding="12" CornerRadius="8" BorderThickness="1"
+                            BorderBrush="{DynamicResource SukiBorderBrush}" Background="{DynamicResource SukiCardBackground}">
+                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="5" ColumnSpacing="8">
+                            <SelectableTextBlock Text="{Binding Code}" TextWrapping="Wrap" FontWeight="DemiBold"
+                                                 VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Classes="Basic" Command="{Binding Panel.RedeemOneCommand}"
+                                    CommandParameter="{Binding}" Content="{markup:I18n {x:Static helper:LangKeys.RedeemOne}}" />
+                            <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Expiry}" FontSize="12"
+                                       Foreground="{DynamicResource SukiLowText}" TextWrapping="Wrap" />
+                            <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding Result}" FontSize="12" TextWrapping="Wrap"
+                                       Classes.success="{Binding Succeeded}">
+                                <TextBlock.Styles>
+                                    <Style Selector="TextBlock.success">
+                                        <Setter Property="Foreground" Value="{DynamicResource SukiSuccessColor}" />
+                                    </Style>
+                                </TextBlock.Styles>
+                            </TextBlock>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </StackPanel>
+</UserControl>

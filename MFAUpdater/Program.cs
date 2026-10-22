@@ -49,6 +49,11 @@ public class Program
                 Console.WriteLine("mfa-update-v1");
                 return;
             }
+            if (args.Length == 1 && args[0] == "--dependency-check-protocol")
+            {
+                Console.WriteLine("mfa-python-check-v1");
+                return;
+            }
             if (args.Length == 2 && args[0] is "--apply-plan" or "--recover")
             {
                 RunTransactionalUpdate(args[0], args[1]);

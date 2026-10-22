@@ -2110,4 +2110,52 @@
   <data name="TaskGroupSelect" xml:space="preserve"><value>グループ内のタスクをすべて選択・解除</value></data>
   <data name="TaskMoveToTop" xml:space="preserve"><value>先頭に移動</value></data>
   <data name="TaskMoveToBottom" xml:space="preserve"><value>末尾に移動</value></data>
+  <data name="RedeemCodes" xml:space="preserve">
+    <value>交換コード</value>
+  </data>
+  <data name="RedeemRefresh" xml:space="preserve">
+    <value>更新</value>
+  </data>
+  <data name="RedeemAll" xml:space="preserve">
+    <value>すべて交換</value>
+  </data>
+  <data name="RedeemOne" xml:space="preserve">
+    <value>交換</value>
+  </data>
+  <data name="RedeemView" xml:space="preserve">
+    <value>表示</value>
+  </data>
+  <data name="RedeemBusy" xml:space="preserve">
+    <value>タスク実行中です。終了後に交換してください。</value>
+  </data>
+  <data name="RedeemAvailable" xml:space="preserve">
+    <value>現在 {0} 件利用可能</value>
+  </data>
+  <data name="RedeemNewNotice" xml:space="preserve">
+    <value>新しい交換コードが {0} 件あります</value>
+  </data>
+  <data name="RedeemNewBadge" xml:space="preserve">
+    <value>新規 {0}</value>
+  </data>
+  <data name="RedeemExpires" xml:space="preserve">
+    <value>{0} まで</value>
+  </data>
+  <data name="RedeemExpiryUnknown" xml:space="preserve">
+    <value>有効期限未記載</value>
+  </data>
+  <data name="RedeemRunning" xml:space="preserve">
+    <value>交換中…</value>
+  </data>
+  <data name="RedeemProgress" xml:space="preserve">
+    <value>処理済み {0} / {1}</value>
+  </data>
+  <data name="RedeemNotCompleted" xml:space="preserve">
+    <value>未完了</value>
+  </data>
+  <data name="AgentDependencyRepairStarted" xml:space="preserve">
+    <value>Python の依存関係に異常があります。修復用の完全なリソースパッケージをダウンロードしています。検証後にアプリを終了してインストールします。</value>
+  </data>
+  <data name="AgentDependencyRepairStopped" xml:space="preserve">
+    <value>自動修復を試みましたが、依存関係に異常が残っています。更新エラーを確認し、設定から完全なリソースパッケージを再ダウンロードしてください。自動修復は繰り返しません。</value>
+  </data>
 </root>

@@ -17,6 +17,7 @@
     <ItemGroup>
         <Compile Include="..\MFAUpdater\UpdateManifest.cs" Link="Helper\UpdateManifest.cs" />
         <Compile Include="..\MFAUpdater\TransactionalUpdate.cs" Link="Helper\TransactionalUpdate.cs" />
+        <Compile Include="..\MFAUpdater\PythonDependencies.cs" Link="Helper\PythonDependencies.cs" />
         <Folder Include="Assets\Sound\" />
         <AvaloniaResource Include="Assets\logo.ico" />
         <AvaloniaResource Include="Assets\Sound\**" />

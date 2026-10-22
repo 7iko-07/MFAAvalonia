@@ -163,6 +163,7 @@ try
         Check(UpdateManifest.Read(plan.Target(UpdateManifest.FileName)).Version == plan.Manifest.Version, "Producer target version not committed");
     }
     await ActionsUpdateTests.RunAsync(root, Check);
+    await MirrorDependencyTests.RunAsync(root, Check);
     await ReleaseFallbackTests.RunAsync(Check);
     ArchiveCaseTests.Run(root, Check);
     DependencyLinkTests.Run(root, Check);

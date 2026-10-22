@@ -696,6 +696,7 @@ public partial class TaskQueueView : UserControl
 
     public void ResetOptionPanels()
     {
+        if (DataContext is TaskQueueViewModel vm) vm.RedeemCodes.Select(false);
         CommonPanelCache.Clear();
         AdvancedPanelCache.Clear();
         IntroductionsCache.Clear();
@@ -754,6 +755,18 @@ public partial class TaskQueueView : UserControl
 
         if (!init)
             vm.IsCommon = true;
+
+        if (!init && (value || vm.RedeemCodes.IsRedeemTask(dragItem.InterfaceItem?.Entry)))
+        {
+            vm.RedeemCodes.Select(value && vm.RedeemCodes.IsRedeemTask(dragItem.InterfaceItem?.Entry));
+            if (vm.RedeemCodes.IsOpen)
+            {
+                vm.ShowSettings = false;
+                SettingCard.IsCollapsed = false;
+                SetMarkDown(dragItem.InterfaceItem?.Description ?? string.Empty);
+                return;
+            }
+        }
 
         // 竖屏模式下，打开 Popup 而不是在左侧面板显示
         if (vm.IsCompactMode && value && !init)

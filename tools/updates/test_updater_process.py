@@ -280,10 +280,19 @@ class UpdaterProcessTests(unittest.TestCase):
         self.fixture(bad_python=True)
         updater = self.start_updater()
         self.assertEqual(updater.wait(timeout=15), 1, self.output())
-        self.assertIn("Python 依赖未配套", self.output())
+        self.assertIn("Python 依赖版本不匹配", self.output())
+        self.assertIn("maafw，要求 5.14.2，实际 5.99.0", self.output())
         self.restarted("v1")
         self.verify_installed(self.baseline)
         self.assertFalse((self.install / "agent/new.py").exists())
+
+    def test_updater_advertises_dependency_check_without_breaking_old_clients(self):
+        for argument, expected in (("--protocol", "mfa-update-v1"),
+                                   ("--dependency-check-protocol", "mfa-python-check-v1")):
+            result = subprocess.run([str(self.worker / "MFAUpdater.exe"), argument],
+                                    cwd=self.worker, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), expected)
 
     def test_killed_updater_can_recover_and_restart_old_app(self):
         self.fixture()

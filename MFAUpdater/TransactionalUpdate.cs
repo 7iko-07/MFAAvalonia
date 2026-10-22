@@ -209,36 +209,10 @@ public sealed class TransactionalUpdate(Action<string>? log = null, Action<int>?
 
     private static void VerifyPythonDependencies(UpdatePlan plan)
     {
-        if (!plan.Manifest.Files.Any(f => f.Path == "python-dependencies.json")) return;
-        using var json = JsonDocument.Parse(File.ReadAllText(plan.Target("python-dependencies.json")));
-        var python = Path.Combine(plan.InstallRoot, "python");
-        if (!Directory.Exists(python)) throw new InvalidDataException("Python 环境缺失。");
-        var metadata = Directory.EnumerateFiles(python, "METADATA", UpdatePaths.DependencyScanOptions)
-            .Select(p => Path.GetRelativePath(plan.InstallRoot, p).Replace('\\', '/'))
-            .Where(p => p.EndsWith(".dist-info/METADATA", StringComparison.OrdinalIgnoreCase)).ToArray();
-        foreach (var package in json.RootElement.GetProperty("packages").EnumerateObject())
-        {
-            var normalize = static (string name) => name.Replace('-', '_').Replace('.', '_').ToLowerInvariant();
-            var expected = package.Value.GetString();
-            // importlib.metadata discovers *.dist-info directories even when
-            // METADATA is missing. An empty old directory can mask the new version.
-            var candidates = Directory.EnumerateDirectories(python, "*.dist-info", UpdatePaths.DependencyScanOptions)
-                .Count(directory =>
-                {
-                    var name = Path.GetFileName(directory);
-                    var delimiter = name.IndexOf('-');
-                    return delimiter > 0 && normalize(name[..delimiter]) == normalize(package.Name);
-                });
-            var versions = metadata.Select(p =>
-            {
-                var lines = File.ReadAllLines(plan.Target(p));
-                var name = lines.FirstOrDefault(l => l.StartsWith("Name: "))?[6..];
-                var version = lines.FirstOrDefault(l => l.StartsWith("Version: "))?[9..];
-                return name != null && normalize(name) == normalize(package.Name) ? version : null;
-            }).Where(v => v != null).ToArray();
-            if (candidates != 1 || versions.Length != 1 || versions[0] != expected)
-                throw new InvalidDataException($"Python 依赖未配套或残留旧版本：{package.Name} {expected}");
-        }
+        // Check the resulting installation even when the dependency manifest was
+        // unchanged and therefore absent from the transport payload.
+        var requiresInterpreter = plan.Manifest.Files.Any(f => f.Path is "python/python.exe" or "python/bin/python3");
+        PythonDependencies.VerifyInstalledAsync(plan.InstallRoot, requiresInterpreter).GetAwaiter().GetResult();
     }
 
     private static void AtomicWrite(string target, Action<string> write)

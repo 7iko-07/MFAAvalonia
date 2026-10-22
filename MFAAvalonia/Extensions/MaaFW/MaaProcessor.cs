@@ -512,6 +512,7 @@ public class MaaProcessor
 
     public void Dispose()
     {
+        ViewModel?.DisposeRedeemCodes();
         _isClosed = true;
         DisposeScreenshotTasker();
         _detachedScreenshotCleanupCancellationTokenSource?.Cancel();
@@ -3596,6 +3597,14 @@ public class MaaProcessor
     async private Task TryRunTasksAsync(MaaTasker? maa, string? task, string? param, CancellationToken token)
     {
         if (maa == null || task == null) return;
+
+        var redeemCodes = ViewModel?.RedeemCodes;
+        if (redeemCodes?.IsRedeemTask(task) == true)
+        {
+            var preparation = await DispatcherHelper.RunOnMainThreadAsync(() => redeemCodes.PrepareRunAsync(param));
+            param = await preparation;
+            token.ThrowIfCancellationRequested();
+        }
 
         var job = maa.AppendTask(task, param ?? "{}");
         await TaskManager.RunTaskAsync((Action)(() =>
