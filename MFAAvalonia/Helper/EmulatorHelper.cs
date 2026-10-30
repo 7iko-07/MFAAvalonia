@@ -4,6 +4,7 @@ using MFAAvalonia.Extensions.MaaFW;
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text.RegularExpressions;
@@ -24,33 +25,28 @@ public static class EmulatorHelper
     /// 一个根据连接配置判断使用关闭模拟器的方式的方法
     /// </summary>
     /// <returns>是否关闭成功</returns>
-    public static bool KillEmulatorModeSwitcher(MaaProcessor processor)
+    public static bool KillEmulatorModeSwitcher(MaaProcessor processor, bool allowFallback = true)
     {
         try
         {
-            string emulatorMode = "None";
-            var windowName = processor.Config.AdbDevice.Name;
-            if (windowName.Contains("MuMuPlayer12") || windowName.Contains("MuMu"))
-                emulatorMode = "MuMuEmulator12";
-            else if (windowName.Contains("Nox"))
-                emulatorMode = "Nox";
-            else if (windowName.Contains("LDPlayer") || windowName.Contains("雷电"))
-                emulatorMode = "LDPlayer";
-            else if (windowName.Contains("XYAZ"))
-                emulatorMode = "XYAZ";
-            else if (windowName.Contains("BlueStacks"))
-                emulatorMode = "BlueStacks";
+            var emulatorMode = EndTaskPolicy.EmulatorMode(processor.Config.AdbDevice.Name);
 
             LoggerHelper.Info($"已识别模拟器关闭模式：模式={emulatorMode}");
 
+            if (!allowFallback && !EndTaskPolicy.IsLocalEmulatorAddress(processor.Config.AdbDevice.AdbSerial, emulatorMode))
+            {
+                LoggerHelper.Warning("无法将当前连接确认到本机模拟器实例，已取消关闭模拟器。");
+                return false;
+            }
+
             return emulatorMode switch
             {
-                "Nox" => KillEmulatorNox(processor),
-                "LDPlayer" => KillEmulatorLdPlayer(processor),
-                "XYAZ" => KillEmulatorXyaz(processor),
-                "BlueStacks" => KillEmulatorBlueStacks(processor),
-                "MuMuEmulator12" => KillEmulatorMuMuEmulator12(processor),
-                _ => KillEmulatorByWindow(processor),
+                "Nox" => KillEmulatorNox(processor, allowFallback),
+                "LDPlayer" => KillEmulatorLdPlayer(processor, allowFallback),
+                "XYAZ" => KillEmulatorXyaz(processor, allowFallback),
+                "BlueStacks" when allowFallback => KillEmulatorBlueStacks(processor),
+                "MuMuEmulator12" => KillEmulatorMuMuEmulator12(processor, allowFallback),
+                _ => allowFallback && KillEmulatorByWindow(processor),
             };
         }
         catch (Exception e)
@@ -60,11 +56,23 @@ public static class EmulatorHelper
         }
     }
 
+    private static bool HasSingleInstallation(Process[] processes)
+    {
+        if (processes.Length == 0) return false;
+        var paths = processes.Select(process => process.MainModule?.FileName).ToList();
+        if (paths.Any(string.IsNullOrWhiteSpace) || paths.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 1)
+        {
+            LoggerHelper.Warning("检测到多个模拟器安装路径或无法确认安装路径，已取消自动关闭。");
+            return false;
+        }
+        return true;
+    }
+
     /// <summary>
     /// 一个用于调用 MuMu12 模拟器控制台关闭 MuMu12 的方法
     /// </summary>
     /// <returns>是否关闭成功</returns>
-    private static bool KillEmulatorMuMuEmulator12(MaaProcessor processor)
+    private static bool KillEmulatorMuMuEmulator12(MaaProcessor processor, bool allowFallback)
     {
         string address = processor.Config.AdbDevice.AdbSerial;
         int emuIndex;
@@ -126,6 +134,9 @@ public static class EmulatorHelper
             processes = Process.GetProcessesByName("MuMuPlayer"); // 兼容旧版
         }
 
+        if (!allowFallback && !HasSingleInstallation(processes
+                .Concat(Process.GetProcessesByName("MuMuPlayer")).ToArray())) return false;
+
         if (processes.Length == 0)
         {
             return false;
@@ -178,25 +189,25 @@ public static class EmulatorHelper
                 UseShellExecute = false,
             };
             var process = Process.Start(startInfo);
-            if (process != null && process.WaitForExit(5000))
+            if (process != null && process.WaitForExit(5000) && process.ExitCode == 0)
             {
                 LoggerHelper.Info($"已通过控制台关闭模拟器：索引={emuIndex}，控制台路径={consolePath}");
                 return true;
             }
 
             LoggerHelper.Warning($"控制台关闭模拟器超时，准备改为按窗口关闭：索引={emuIndex}，控制台路径={consolePath}");
-            return KillEmulatorByWindow(processor);
+            return allowFallback && KillEmulatorByWindow(processor);
         }
 
         LoggerHelper.Error("未在预期位置找到 MuMuManager.exe，准备改为按窗口关闭模拟器。");
-        return KillEmulatorByWindow(processor);
+        return allowFallback && KillEmulatorByWindow(processor);
     }
 
     /// <summary>
     /// 一个用于调用雷电模拟器控制台关闭雷电模拟器的方法
     /// </summary>
     /// <returns>是否关闭成功</returns>
-    private static bool KillEmulatorLdPlayer(MaaProcessor processor)
+    private static bool KillEmulatorLdPlayer(MaaProcessor processor, bool allowFallback)
     {
         string address = processor.Config.AdbDevice.AdbSerial;
         int emuIndex;
@@ -227,6 +238,7 @@ public static class EmulatorHelper
         }
 
         Process[] processes = Process.GetProcessesByName("dnplayer");
+        if (!allowFallback && !HasSingleInstallation(processes)) return false;
         if (processes.Length <= 0)
         {
             return false;
@@ -267,29 +279,29 @@ public static class EmulatorHelper
                 UseShellExecute = false,
             };
             var process = Process.Start(startInfo);
-            if (process != null && process.WaitForExit(5000))
+            if (process != null && process.WaitForExit(5000) && process.ExitCode == 0)
             {
                 LoggerHelper.Info($"Emulator at index {emuIndex} closed through console. Console path: {consolePath}");
                 return true;
             }
 
             LoggerHelper.Warning($"Console process at index {emuIndex} did not exit within the specified timeout. Killing emulator by window. Console path: {consolePath}");
-            return KillEmulatorByWindow(processor);
+            return allowFallback && KillEmulatorByWindow(processor);
         }
 
         LoggerHelper.Error($"`{consolePath}` not found, try to kill emulator by window.");
-        return KillEmulatorByWindow(processor);
+        return allowFallback && KillEmulatorByWindow(processor);
     }
 
     /// <summary>
     /// 一个用于调用夜神模拟器控制台关闭夜神模拟器的方法
     /// </summary>
     /// <returns>是否关闭成功</returns>
-    private static bool KillEmulatorNox(MaaProcessor processor)
+    private static bool KillEmulatorNox(MaaProcessor processor, bool allowFallback)
     {
         string address = processor.Config.AdbDevice.AdbSerial;
         int emuIndex;
-        if (address == "127.0.0.1:62001")
+        if (address is "127.0.0.1:62001" or "localhost:62001")
         {
             emuIndex = 0;
         }
@@ -310,6 +322,7 @@ public static class EmulatorHelper
         }
 
         Process[] processes = Process.GetProcessesByName("Nox");
+        if (!allowFallback && !HasSingleInstallation(processes)) return false;
         if (processes.Length <= 0)
         {
             return false;
@@ -350,25 +363,25 @@ public static class EmulatorHelper
                 UseShellExecute = false,
             };
             var process = Process.Start(startInfo);
-            if (process != null && process.WaitForExit(5000))
+            if (process != null && process.WaitForExit(5000) && process.ExitCode == 0)
             {
                 LoggerHelper.Info($"Emulator at index {emuIndex} closed through console. Console path: {consolePath}");
                 return true;
             }
 
             LoggerHelper.Warning($"Console process at index {emuIndex} did not exit within the specified timeout. Killing emulator by window. Console path: {consolePath}");
-            return KillEmulatorByWindow(processor);
+            return allowFallback && KillEmulatorByWindow(processor);
         }
 
         LoggerHelper.Error($"`{consolePath}` not found, try to kill emulator by window.");
-        return KillEmulatorByWindow(processor);
+        return allowFallback && KillEmulatorByWindow(processor);
     }
 
     /// <summary>
     /// 一个用于调用逍遥模拟器控制台关闭逍遥模拟器的方法
     /// </summary>
     /// <returns>是否关闭成功</returns>
-    private static bool KillEmulatorXyaz(MaaProcessor processor)
+    private static bool KillEmulatorXyaz(MaaProcessor processor, bool allowFallback)
     {
         string address = processor.Config.AdbDevice.AdbSerial;
         if (!address.Contains(':'))
@@ -386,6 +399,7 @@ public static class EmulatorHelper
         var emuIndex = (port - 21503) / 10;
 
         Process[] processes = Process.GetProcessesByName("MEmu");
+        if (!allowFallback && !HasSingleInstallation(processes)) return false;
         if (processes.Length <= 0)
         {
             return false;
@@ -426,18 +440,18 @@ public static class EmulatorHelper
                 UseShellExecute = false,
             };
             var process = Process.Start(startInfo);
-            if (process != null && process.WaitForExit(5000))
+            if (process != null && process.WaitForExit(5000) && process.ExitCode == 0)
             {
                 LoggerHelper.Info($"Emulator at index {emuIndex} closed through console. Console path: {consolePath}");
                 return true;
             }
 
             LoggerHelper.Warning($"Console process at index {emuIndex} did not exit within the specified timeout. Killing emulator by window. Console path: {consolePath}");
-            return KillEmulatorByWindow(processor);
+            return allowFallback && KillEmulatorByWindow(processor);
         }
 
         LoggerHelper.Error($"`{consolePath}` not found, try to kill emulator by window.");
-        return KillEmulatorByWindow(processor);
+        return allowFallback && KillEmulatorByWindow(processor);
     }
 
     /// <summary>

@@ -31,6 +31,9 @@ internal static class MaaInterfaceActivationHelper
         if (task == null)
             return false;
 
+        if (task.IsClientTask)
+            return true;
+
         if (!MatchesFilter(task.Resource, currentResourceName))
             return false;
 
@@ -50,6 +53,13 @@ internal static class MaaInterfaceActivationHelper
     {
         if (task == null)
             return false;
+
+        if (task.IsClientTask)
+        {
+            if (task.Entry == ClientTaskProvider.CloseMfaEntry) return true;
+            return maaInterface?.Controller?.Any(controller => string.Equals(controller.Name, currentControllerName, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(controller.Type, "Adb", StringComparison.OrdinalIgnoreCase)) == true;
+        }
 
         if (!MatchesFilter(task.Controller, currentControllerName))
             return false;

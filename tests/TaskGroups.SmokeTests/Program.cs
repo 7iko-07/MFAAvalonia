@@ -9,7 +9,7 @@ using MFAAvalonia.Helper.ValueType;
 using MFAAvalonia.ViewModels.Other;
 using MFAAvalonia.ViewModels.Pages;
 
-internal static class Program
+internal static partial class Program
 {
     [ModuleInitializer]
     internal static void ResolveDependencies()
@@ -58,13 +58,19 @@ internal static class Program
         Set(task, "_isInitialized", true);
         return task;
     }
-    public static void Main()
+    public static void Main(string[] args)
     {
         CheckDefaultTaskPositions();
         CheckSplitGroupOperations();
         CheckRestartPersistence();
         CheckMoveToListEnds();
         CheckCollectionChangeReentrancy();
+        CheckPresetGroups(args.FirstOrDefault());
+        CheckEndTaskGroups();
+        CheckWholeGroupMoves();
+        CheckStartupTasks();
+        CheckTaskReload();
+        CheckClientTasks();
         var profileA = new MFAConfiguration("group-smoke-a", "group-smoke-a", []);
         var profileB = new MFAConfiguration("group-smoke-b", "group-smoke-b", []);
         ConfigurationManager.Current = profileA;

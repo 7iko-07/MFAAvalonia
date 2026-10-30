@@ -16,6 +16,7 @@ internal static class Program
 
     private static int Main()
     {
+        Environment.CurrentDirectory = AppContext.BaseDirectory;
         var tests = new List<(string Name, Action Run)>();
         foreach (var type in new[] { "select", "switch" })
         foreach (var form in ReferenceForms)
@@ -99,6 +100,9 @@ internal static class Program
             Check(option.SelectedCases.Count == 0, "empty checkbox selection was overwritten");
         }));
 
+        tests.AddRange(OptionConfirmationChecks.Create());
+        tests.AddRange(StartupOptionLayoutChecks.Create());
+
         var failures = 0;
         foreach (var (name, run) in tests)
         {
@@ -124,6 +128,7 @@ internal static class Program
               "task": [{"name":"测试任务","entry":"Entry"}],
               "option": {
                 "切换账号": {
+                  "__mfa_confirm_on_enable": "测试开启提醒",
                   "cases": [
                     {"name":"Yes","option":["yesChild"]},
                     {"name":"No","option":["noChild"]}

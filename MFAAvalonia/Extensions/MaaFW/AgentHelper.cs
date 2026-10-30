@@ -98,7 +98,7 @@ public static class AgentHelper
         {
             LoggerHelper.Error($"Agent 依赖检查失败：{ex.Message}", ex);
             processor.AddLog(ex.Message, Avalonia.Media.Brushes.OrangeRed, changeColor: false);
-            ToastHelper.Error(LangKeys.AgentStartFailed.ToLocalization(), ex.Message);
+            ToastHelper.Error(LangKeys.AgentStartFailed.ToLocalization(), ex.Message, instanceId: processor.InstanceId);
             VersionChecker.RequestDependencyRepair();
             return [];
         }
@@ -127,7 +127,7 @@ public static class AgentHelper
             {
                 LoggerHelper.Error($"启动 Agent 失败：{agentConfig.ChildExec}，原因：{ex.Message}");
                 processor.AddLogByKey(LangKeys.AgentStartFailed, Avalonia.Media.Brushes.OrangeRed, changeColor: false);
-                ToastHelper.Error(LangKeys.AgentStartFailed.ToLocalization(), ex.Message);
+                ToastHelper.Error(LangKeys.AgentStartFailed.ToLocalization(), ex.Message, instanceId: processor.InstanceId);
                 // 清理已启动的 agent
                 KillAllAgents(contexts);
                 return [];

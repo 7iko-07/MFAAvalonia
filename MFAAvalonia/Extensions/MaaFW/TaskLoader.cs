@@ -33,6 +33,10 @@ public class TaskLoader(MaaInterface? maaInterface, TaskQueueViewModel taskQueue
     {
         var instanceConfig = taskQueueViewModel.Processor.InstanceConfiguration;
 
+        var presetKey = instanceConfig.GetValue(ConfigurationKeys.InstancePresetKey, string.Empty);
+        var preset = maaInterface?.Preset?.FirstOrDefault(item => item.Name == presetKey);
+        tasks = ClientTaskProvider.GetTaskTemplates(maaInterface, tasks, preset);
+
         var currentTasks = instanceConfig.GetValue(ConfigurationKeys.CurrentTasks, new List<string>());
 
         if (currentTasks.Any(t => t.Contains(OLD_SEPARATOR) && !t.Contains(NEW_SEPARATOR)))
@@ -347,9 +351,10 @@ public class TaskLoader(MaaInterface? maaInterface, TaskQueueViewModel taskQueue
         var instanceConfig = taskQueueViewModel.Processor.InstanceConfiguration;
         var presetKey = instanceConfig.GetValue(ConfigurationKeys.InstancePresetKey, string.Empty);
         var presetTaskNames = ResolvePresetTaskNames(presetKey);
+        drags = MergeStartupAndShutdownTasks(drags, tasks);
 
         // 使用 HashSet 去重，解决 currentTasks 可能存在重复项的问题
-        var currentTaskSet = new HashSet<string>(currentTasks);
+        var currentTaskSet = currentTasks.Select(ClientTaskProvider.NormalizeHistoryKey).ToHashSet();
 
         var removeList = new List<DragItemViewModel>();
         var updateList = new List<DragItemViewModel>();
@@ -408,6 +413,7 @@ public class TaskLoader(MaaInterface? maaInterface, TaskQueueViewModel taskQueue
         // 保留已删除任务的记录，防止重启后被重新添加
         newCurrentTasks.UnionWith(deletedTaskKeys);
 
+        var addedClientTasks = new List<DragItemViewModel>();
         foreach (var task in tasks)
         {
             var historyKey = $"{task.Name}{NEW_SEPARATOR}{task.Entry}";
@@ -424,7 +430,7 @@ public class TaskLoader(MaaInterface? maaInterface, TaskQueueViewModel taskQueue
                 continue;
             }
 
-            if (presetTaskNames != null
+            if (!task.IsClientTask && presetTaskNames != null
                 && (string.IsNullOrWhiteSpace(task.Name) || !presetTaskNames.Contains(task.Name)))
             {
                 continue;
@@ -438,12 +444,111 @@ public class TaskLoader(MaaInterface? maaInterface, TaskQueueViewModel taskQueue
                 clonedTask.Option.ForEach(option => SetDefaultOptionValue(maaInterface, option));
             }
             updateList.Add(newItem);
+            if (clonedTask.IsClientTask) addedClientTasks.Add(newItem);
             existingKeys.Add(historyKey);
             newCurrentTasks.Add(historyKey);
         }
 
+        if (addedClientTasks.Count > 0) PlaceNewClientTasks(updateList, addedClientTasks);
+
         currentTasks = newCurrentTasks.ToList();
         return (updateList, removeList);
+    }
+
+    private IList<DragItemViewModel> MergeStartupAndShutdownTasks(
+        IList<DragItemViewModel> items, List<MaaInterface.MaaInterfaceTask> templates)
+    {
+        var result = items.ToList();
+        foreach (var template in templates.Where(task => task.IsPinnedTask))
+        {
+            var startup = template.IsStartupTask;
+            var combined = result.FirstOrDefault(item => item.InterfaceItem?.Entry == template.Entry);
+            var legacy = result.Where(item => startup ? item.InterfaceItem?.IsStartTask == true :
+                item.InterfaceItem?.Entry is ClientTaskProvider.CloseEmulatorEntry or ClientTaskProvider.CloseMfaEntry).ToList();
+            if (combined == null && legacy.Count == 0) continue;
+
+            var migrate = startup ? combined?.InterfaceItem?.IsStartupTask != true :
+                combined?.InterfaceItem?.IsShutdownTask != true;
+            var gameEnabled = combined?.IsChecked == true;
+            result.RemoveAll(legacy.Contains);
+            if (combined == null)
+            {
+                combined = new DragItemViewModel(template.Clone()) { OwnerViewModel = taskQueueViewModel };
+                result.Add(combined);
+            }
+            var task = combined.InterfaceItem!;
+            if (migrate)
+            {
+                if (startup)
+                {
+                    task.StartGame = gameEnabled;
+                    task.StartEmulator = legacy.Any(item => item.IsChecked);
+                    combined.IsChecked = task.StartGame || task.StartEmulator;
+                }
+                else
+                {
+                    task.CloseGame = gameEnabled;
+                    task.CloseEmulator = legacy.Any(item => item.IsChecked &&
+                        item.InterfaceItem?.Entry == ClientTaskProvider.CloseEmulatorEntry);
+                    task.CloseApplication = legacy.Any(item => item.IsChecked &&
+                        item.InterfaceItem?.Entry == ClientTaskProvider.CloseMfaEntry);
+                    combined.IsChecked = task.CloseGame || task.CloseEmulator || task.CloseApplication;
+                }
+            }
+            task.IsStartupTask = template.IsStartupTask;
+            task.IsShutdownTask = template.IsShutdownTask;
+            task.Group = [];
+
+            var config = taskQueueViewModel.Processor.InstanceConfiguration;
+            var layout = config.GetValue(ConfigurationKeys.TaskGroupLayout, new TaskGroupLayout());
+            layout.TaskGroups[task.LocalId!] = string.Empty;
+            layout.BottomTasks.Remove(task.LocalId!);
+            foreach (var old in legacy)
+            {
+                if (old.InterfaceItem?.LocalId is not { } id) continue;
+                layout.TaskGroups.Remove(id);
+                layout.TaskOrder.Remove(id);
+                layout.BottomTasks.Remove(id);
+            }
+            foreach (var group in new[] { startup ? ClientTaskProvider.StartGroupName : EndTaskPolicy.GroupName,
+                         startup ? "启动前执行" : "结束后执行" })
+            {
+                layout.Groups.RemoveAll(saved => saved.Name == group);
+                layout.EmptyGroupNextTasks.Remove(group);
+            }
+            config.SetValue(ConfigurationKeys.TaskGroupLayout, layout);
+        }
+        return result;
+    }
+
+    private void PlaceNewClientTasks(List<DragItemViewModel> items, List<DragItemViewModel> added)
+    {
+        var config = taskQueueViewModel.Processor.InstanceConfiguration;
+        var layout = config.GetValue(ConfigurationKeys.TaskGroupLayout, new TaskGroupLayout());
+        var presetKey = config.GetValue(ConfigurationKeys.InstancePresetKey, string.Empty);
+        var preset = maaInterface?.Preset?.FirstOrDefault(item => item.Name == presetKey);
+        string? GroupOf(DragItemViewModel item) => item.InterfaceItem?.LocalId is { } id &&
+            layout.TaskGroups.TryGetValue(id, out var saved) ? saved : item.InterfaceItem?.Group?.FirstOrDefault();
+
+        // Insert only new client tasks. Never move or regroup tasks from an existing configuration.
+        foreach (var item in added)
+        {
+            var group = GroupOf(item);
+            if (group == null || layout.DeletedGroups.Contains(group)) continue;
+            items.Remove(item);
+            var members = items.Where(other => GroupOf(other) == group).ToList();
+            var index = item.InterfaceItem!.IsStartTask
+                ? members.Count > 0 ? items.IndexOf(members[0]) : 0
+                : members.Count > 0 ? items.IndexOf(members[^1]) + 1
+                : items.FindLastIndex(other => ClientTaskProvider.DefaultOrder(other.InterfaceItem, maaInterface, preset) < 2) + 1;
+            if (item.InterfaceItem.Entry == ClientTaskProvider.CloseEmulatorEntry &&
+                members.FirstOrDefault(other => other.InterfaceItem?.Entry == ClientTaskProvider.CloseMfaEntry) is { } exit)
+                index = items.IndexOf(exit);
+            items.Insert(index, item);
+        }
+        layout.TaskOrder = items.Where(item => item.InterfaceItem?.LocalId != null)
+            .Select(item => item.InterfaceItem!.LocalId!).ToList();
+        config.SetValue(ConfigurationKeys.TaskGroupLayout, layout);
     }
 
     private HashSet<string>? ResolvePresetTaskNames(string? presetKey)
@@ -469,8 +574,11 @@ public class TaskLoader(MaaInterface? maaInterface, TaskQueueViewModel taskQueue
         else if (oldItem.InterfaceItem.Name != newItem.Name) return;
 
         oldItem.InterfaceItem.Entry = newItem.Entry;
+        oldItem.InterfaceItem.IsStartupTask = newItem.IsStartupTask;
+        oldItem.InterfaceItem.IsShutdownTask = newItem.IsShutdownTask;
         oldItem.InterfaceItem.Label = newItem.Label;
         oldItem.InterfaceItem.ExcludeFromSelectAll = newItem.ExcludeFromSelectAll;
+        oldItem.InterfaceItem.EndAction = newItem.EndAction;
         oldItem.InterfaceItem.PipelineOverride = newItem.PipelineOverride;
         oldItem.InterfaceItem.Description = newItem.Description;
         oldItem.InterfaceItem.Document = newItem.Document;
@@ -491,7 +599,7 @@ public class TaskLoader(MaaInterface? maaInterface, TaskQueueViewModel taskQueue
         UpdateOptions(oldItem, newItem);
 
         // 更新 IsVisible 属性，确保设置图标的可见性正确
-        oldItem.IsVisible = oldItem.InterfaceItem is { Advanced.Count: > 0 }
+        oldItem.IsVisible = oldItem.InterfaceItem.IsStartTask || oldItem.InterfaceItem is { Advanced.Count: > 0 }
             || oldItem.InterfaceItem is { Option.Count: > 0 }
             || oldItem.InterfaceItem.Repeatable == true
             || !string.IsNullOrWhiteSpace(oldItem.InterfaceItem.Description)
@@ -732,16 +840,8 @@ public class TaskLoader(MaaInterface? maaInterface, TaskQueueViewModel taskQueue
                 finalItems.Add(controllerOptionItem);
         }
 
-        // 添加普通任务项
-        if (drags.Any())
-        {
-            // 过滤掉已存在的资源设置项，避免重复
-            finalItems.AddRange(drags.Where(d => !d.IsResourceOptionItem));
-        }
-        else
-        {
-            finalItems.AddRange(newItems);
-        }
+        // Synchronization already adds new tasks; an empty result also represents deliberate deletion.
+        finalItems.AddRange(drags.Where(d => !d.IsResourceOptionItem));
 
         // UI 线程更新集合，确保 TaskList 刷新
         DispatcherHelper.RunOnMainThread(() =>
@@ -749,10 +849,18 @@ public class TaskLoader(MaaInterface? maaInterface, TaskQueueViewModel taskQueue
             tasksSource.Clear();
             foreach (var item in newItems) tasksSource.Add(item);
 
-            taskQueueViewModel.TaskItemViewModels.Clear();
-            foreach (var item in finalItems)
+            // Startup normally reuses the same tasks in the same order. Keep their
+            // containers, selection and scroll position instead of resetting the list.
+            if (!taskQueueViewModel.TaskItemViewModels.SequenceEqual(finalItems))
             {
-                taskQueueViewModel.TaskItemViewModels.Add(item);
+                taskQueueViewModel.NotifyTaskListChanging();
+                taskQueueViewModel.TaskItemViewModels.Clear();
+                foreach (var item in finalItems)
+                    taskQueueViewModel.TaskItemViewModels.Add(item);
+            }
+            else if (taskQueueViewModel.TaskItemGroups.Count == 0)
+            {
+                taskQueueViewModel.RebuildTaskItemGroups();
             }
 
             // 根据当前资源更新任务的可见性

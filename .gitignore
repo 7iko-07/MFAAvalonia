@@ -9,3 +9,5 @@ riderModule.iml
 *.log
 *.md
 !docs/incremental-updates.md
+!docs/task-option-confirmation.md
+!docs/end-tasks.md

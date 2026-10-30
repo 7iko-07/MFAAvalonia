@@ -51,6 +51,7 @@ public sealed class RedeemCodeDocument
 /// <summary>所有实例共用一次启动获取和已读状态；计时器只计算本地开启/过期时间。</summary>
 public partial class RedeemCodeFeed : ObservableObject
 {
+    public const string NotificationsEnabledKey = "RedeemCodes.NotificationsEnabled";
     public static RedeemCodeFeed Instance { get; } = new();
     public RedeemCodeSettings? Settings { get; private set; }
     public IReadOnlyList<RedeemCode> Available { get; private set; } = [];
@@ -60,11 +61,20 @@ public partial class RedeemCodeFeed : ObservableObject
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private string _error = string.Empty;
     [ObservableProperty] private int _unreadCount;
-    [ObservableProperty] private bool _showNotice;
+    private bool _notificationsEnabled = true;
+    public bool NotificationsEnabled
+    {
+        get => _notificationsEnabled;
+        set
+        {
+            if (SetProperty(ref _notificationsEnabled, value))
+                OnNotificationsEnabledChanged(value);
+        }
+    }
+    public bool ShowNotice => NotificationsEnabled && UnreadCount > 0;
 
     private RedeemCodeDocument _document = new();
     private HashSet<string> _seen = new(StringComparer.Ordinal);
-    private HashSet<string> _unread = new(StringComparer.Ordinal);
     private readonly DispatcherTimer _timer = new();
     private Task? _initialization;
     private Task? _refresh;
@@ -88,6 +98,8 @@ public partial class RedeemCodeFeed : ObservableObject
                 throw new InvalidDataException("Invalid redeem_codes.json");
             _seenKey = "RedeemCodes.Seen." + Settings.Url;
             _seen = JsonConvert.DeserializeObject<HashSet<string>>(GlobalConfiguration.GetValue(_seenKey, "[]")) ?? [];
+            _notificationsEnabled = !bool.TryParse(GlobalConfiguration.GetValue(NotificationsEnabledKey), out var enabled) || enabled;
+            OnPropertyChanged(nameof(NotificationsEnabled));
             OnPropertyChanged(nameof(Enabled));
             await RefreshAsync();
         }
@@ -132,11 +144,14 @@ public partial class RedeemCodeFeed : ObservableObject
     {
         var now = DateTimeOffset.UtcNow;
         Available = _document.Available(now);
-        var unread = Available.Select(item => item.Code).Where(code => !_seen.Contains(code)).ToHashSet(StringComparer.Ordinal);
-        if (unread.Except(_unread).Any()) ShowNotice = true;
-        _unread = unread;
-        UnreadCount = unread.Count;
-        if (UnreadCount == 0) ShowNotice = false;
+        // 静默期间的新码也记入已处理记录，重新开启通知时不补发。
+        if (!NotificationsEnabled && Available.Any(item => !_seen.Contains(item.Code)))
+        {
+            _seen.UnionWith(Available.Select(item => item.Code));
+            SaveSeen();
+        }
+        UnreadCount = Available.Count(item => !_seen.Contains(item.Code));
+        OnPropertyChanged(nameof(ShowNotice));
         _timer.Stop();
         if (_document.NextChange(now) is { } next)
         {
@@ -148,13 +163,25 @@ public partial class RedeemCodeFeed : ObservableObject
 
     public void MarkSeen()
     {
-        _seen.UnionWith(Available.Select(item => item.Code));
-        GlobalConfiguration.SetValue(_seenKey, JsonConvert.SerializeObject(_seen));
-        _unread.Clear();
+        _seen.UnionWith(_document.Available(DateTimeOffset.UtcNow).Select(item => item.Code));
+        SaveSeen();
         UnreadCount = 0;
-        ShowNotice = false;
+        OnPropertyChanged(nameof(ShowNotice));
         Changed?.Invoke();
     }
 
-    public void Dismiss() => ShowNotice = false;
+    private void SaveSeen()
+    {
+        if (!string.IsNullOrEmpty(_seenKey))
+            GlobalConfiguration.SetValue(_seenKey, JsonConvert.SerializeObject(_seen));
+    }
+
+    private void OnNotificationsEnabledChanged(bool value)
+    {
+        GlobalConfiguration.SetValue(NotificationsEnabledKey, value.ToString());
+        // 两个方向都清理当前可用的新码，包括计时器尚未处理的开启边界。
+        MarkSeen();
+    }
+
+    public void Dismiss() => MarkSeen();
 }

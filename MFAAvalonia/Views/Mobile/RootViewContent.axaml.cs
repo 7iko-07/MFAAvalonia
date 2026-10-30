@@ -69,7 +69,7 @@ public partial class RootViewContent : UserControl
             sideMenu.SelectedItem = settingsItem;
     }
 
-    private void NavigateToHome()
+    public void NavigateToHome()
     {
         var sideMenu = GetSideMenu();
         var homeItem = sideMenu?.Items.OfType<SukiSideMenuItem>().FirstOrDefault();

@@ -23,7 +23,10 @@ public partial class RedeemCodeRow : ObservableObject
     public string Expiry => CodeInfo.ExpiresAt is { } end
         ? string.Format(LangKeys.RedeemExpires.ToLocalization(), end.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))
         : LangKeys.RedeemExpiryUnknown.ToLocalization();
-    [ObservableProperty] private string _result = string.Empty;
+    public string ResultText => string.IsNullOrWhiteSpace(Result) ? LangKeys.RedeemNotRedeemed.ToLocalization() : Result;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResultText))]
+    private string _result = string.Empty;
     [ObservableProperty] private bool _succeeded;
 
     public RedeemCodeRow(RedeemCode code, RedeemCodePanelViewModel panel)
@@ -36,6 +39,7 @@ public partial class RedeemCodeRow : ObservableObject
     {
         CodeInfo = code;
         OnPropertyChanged(nameof(Expiry));
+        OnPropertyChanged(nameof(ResultText));
     }
 }
 
@@ -46,9 +50,6 @@ public partial class RedeemCodePanelViewModel : ObservableObject, IDisposable
     public bool CanRedeem => _owner.Idle && !Feed.IsLoading && Codes.Count > 0;
     public bool IsTaskRunning => !_owner.Idle;
     public string Summary => string.Format(LangKeys.RedeemAvailable.ToLocalization(), Codes.Count);
-    public string Notice => string.Format(LangKeys.RedeemNewNotice.ToLocalization(), Feed.UnreadCount);
-    public string Badge => string.Format(LangKeys.RedeemNewBadge.ToLocalization(), Feed.UnreadCount);
-    public bool HasUnread => Feed.UnreadCount > 0;
     [ObservableProperty] private bool _isOpen;
     [ObservableProperty] private string _progress = string.Empty;
 
@@ -92,17 +93,7 @@ public partial class RedeemCodePanelViewModel : ObservableObject, IDisposable
 
     private void OnFeedChanged(object? sender, PropertyChangedEventArgs e)
     {
-        OnPropertyChanged(nameof(Notice));
-        OnPropertyChanged(nameof(Badge));
-        OnPropertyChanged(nameof(HasUnread));
-        UpdateTaskBadges();
         NotifyActions();
-    }
-
-    public void UpdateTaskBadges()
-    {
-        foreach (var task in _owner.TaskItemViewModels)
-            task.RedeemCodeBadge = HasUnread && IsRedeemTask(task.InterfaceItem?.Entry) ? Badge : null;
     }
 
     private void OnOwnerChanged(object? sender, PropertyChangedEventArgs e)
@@ -140,7 +131,7 @@ public partial class RedeemCodePanelViewModel : ObservableObject, IDisposable
         foreach (var item in _owner.TaskItemViewModels.Where(item => item.EnableSetting && item != task))
             item.EnableSetting = false;
         task.EnableSetting = true;
-        if (IsOpen) Feed.MarkSeen();
+        Select(true);
     }
 
     public void Select(bool selected)
@@ -148,9 +139,6 @@ public partial class RedeemCodePanelViewModel : ObservableObject, IDisposable
         IsOpen = selected;
         if (selected) Feed.MarkSeen();
     }
-
-    [RelayCommand]
-    private void Dismiss() => Feed.Dismiss();
 
     [RelayCommand(CanExecute = nameof(CanRedeem))]
     private void RedeemAll() => Start(null);

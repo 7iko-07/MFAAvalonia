@@ -2112,6 +2112,7 @@ Please do not copy only the main executable by itself.</value>
   <data name="TaskGroupStart" xml:space="preserve"><value>Run checked tasks in this group</value></data>
   <data name="TaskGroupDelete" xml:space="preserve"><value>Delete group and keep tasks ungrouped</value></data>
   <data name="TaskGroupToggle" xml:space="preserve"><value>Expand or collapse group</value></data>
+  <data name="TaskGroupDrag" xml:space="preserve"><value>Hold and drag to move the entire group</value></data>
   <data name="TaskGroupSelect" xml:space="preserve"><value>Select or deselect all tasks in this group</value></data>
   <data name="TaskMoveToTop" xml:space="preserve"><value>Move to top</value></data>
   <data name="TaskMoveToBottom" xml:space="preserve"><value>Move to bottom</value></data>
@@ -2139,14 +2140,17 @@ Please do not copy only the main executable by itself.</value>
   <data name="RedeemNewNotice" xml:space="preserve">
     <value>{0} new redemption codes</value>
   </data>
-  <data name="RedeemNewBadge" xml:space="preserve">
-    <value>New {0}</value>
+  <data name="RedeemNotifyNewCodes" xml:space="preserve">
+    <value>Notify me of new redemption codes</value>
   </data>
   <data name="RedeemExpires" xml:space="preserve">
     <value>Expires {0}</value>
   </data>
   <data name="RedeemExpiryUnknown" xml:space="preserve">
     <value>Expiry not specified</value>
+  </data>
+  <data name="RedeemNotRedeemed" xml:space="preserve">
+    <value>Not yet redeemed</value>
   </data>
   <data name="RedeemRunning" xml:space="preserve">
     <value>Redeeming…</value>
@@ -2163,6 +2167,27 @@ Please do not copy only the main executable by itself.</value>
   <data name="AgentDependencyRepairStopped" xml:space="preserve">
     <value>Automatic repair was already attempted, but dependencies are still invalid. Check the update error and download the full resource package again in Settings. Automatic repair will not repeat.</value>
   </data>
+  <data name="TaskOptionEnableConfirmationTitle" xml:space="preserve">
+    <value>Confirm before enabling</value>
+  </data>
+  <data name="TaskOptionConfirmEnable" xml:space="preserve">
+    <value>Enable</value>
+  </data>
+  <data name="EndTaskGroup" xml:space="preserve"><value>Run after completion</value></data>
+  <data name="EndTaskDescription" xml:space="preserve"><value>Close after the run ends. Failed runs follow the configuration's continue-on-error setting; manual stops cancel cleanup. Disable the Settings after-task operation first.</value></data>
+  <data name="EndTaskConflict" xml:space="preserve"><value>End tasks and the Settings after-task operation are both enabled. Disable one before starting.</value></data>
+  <data name="EndTaskWaiting" xml:space="preserve"><value>Ordinary tasks ended. Waiting for related configurations to finish before cleanup.</value></data>
+  <data name="EndTaskExecuting" xml:space="preserve"><value>Run after completion: {0}</value></data>
+  <data name="EndTaskCancelled" xml:space="preserve"><value>A related configuration does not permit cleanup. Remaining close actions were cancelled. Check the log.</value></data>
+  <data name="EndTaskFailed" xml:space="preserve"><value>A close action failed or its target could not be confirmed. Remaining close actions were cancelled. Check the log.</value></data>
+  <data name="EndTaskExitCancelled" xml:space="preserve"><value>A configuration does not permit cleanup or was stopped manually. Automatic exit of this program was cancelled.</value></data>
+  <data name="EndTaskBusy" xml:space="preserve"><value>This tab is still running, or the target device or this program is closing. Cannot start another run yet.</value></data>
+  <data name="EndTaskInvalid" xml:space="preserve"><value>Invalid end-task configuration or unsupported controller. Check the log and task configuration.</value></data>
+  <data name="StartEmulatorFailed" xml:space="preserve"><value>Failed to start emulator: {0}</value></data>
+  <data name="StartEmulatorPathInvalid" xml:space="preserve"><value>Set a valid game path in Settings.</value></data>
+  <data name="StartEmulatorConnectionFailed" xml:space="preserve"><value>Could not connect to the emulator. Check the launch arguments and connection settings, or increase the wait time.</value></data>
+  <data name="StartEmulatorTask" xml:space="preserve"><value>Start emulator</value></data>
+  <data name="StartTaskGroup" xml:space="preserve"><value>Run before tasks</value></data>
 </root>
 
 

@@ -367,7 +367,8 @@ public class DragDropExtensions
         // 检查是否是资源预设配置项，如果是则不允许拖拽
         if (listBox.ItemsSource is IList items && sourceItem >= 0 && sourceItem < items.Count)
         {
-            if (items[sourceItem] is Helper.ValueType.DragItemViewModel dragItem && dragItem.IsResourceOptionItem)
+            if (items[sourceItem] is Helper.ValueType.DragItemViewModel dragItem &&
+                (dragItem.IsResourceOptionItem || dragItem.InterfaceItem?.IsPinnedTask == true))
                 return;
         }
 
@@ -403,8 +404,11 @@ public class DragDropExtensions
         sourceIndex = source.IndexOf(_dragItem);
         targetIndex = items.Count == 0 ? 0 : GetTargetIndex(target, e.GetPosition(target));
         if (sourceIndex < 0 || targetIndex < 0 || targetIndex > items.Count) return false;
-        if (_dragItem is DragItemViewModel { IsResourceOptionItem: true }) return false;
-        if (targetIndex == 0 && items.Count > 0 && items[0] is DragItemViewModel { IsResourceOptionItem: true }) return false;
+        if (_dragItem is DragItemViewModel task &&
+            (task.IsResourceOptionItem || task.InterfaceItem?.IsPinnedTask == true)) return false;
+        var fixedRows = items.Cast<object>().TakeWhile(item => item is DragItemViewModel row &&
+            (row.IsResourceOptionItem || row.InterfaceItem?.IsPinnedTask == true)).Count();
+        if (targetIndex < fixedRows) return false;
         if (target.DataContext is TaskItemGroupViewModel targetGroup)
             return _dragSource.DataContext is TaskItemGroupViewModel sourceGroup &&
                 targetGroup.Owner != null && targetGroup.Owner == sourceGroup.Owner && targetGroup.CanEdit;

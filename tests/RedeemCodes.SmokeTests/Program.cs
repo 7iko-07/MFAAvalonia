@@ -8,6 +8,13 @@ using MFAAvalonia.ViewModels.Other;
 using MFAAvalonia.ViewModels.Pages;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Avalonia.Controls;
+using Avalonia;
+using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
+using MFAAvalonia.Views.UserControls;
+using SukiUI.Controls;
+using SukiUI.Toasts;
 
 internal static class Program
 {
@@ -28,6 +35,10 @@ internal static class Program
 
     public static async Task Main()
     {
+        AppBuilder.Configure<Application>()
+            .UseStandardRuntimePlatformSubsystem()
+            .UseWindowingSubsystem(() => { }, "Test")
+            .UseSkia().SetupWithoutStarting();
         var now = DateTimeOffset.Parse("2026-10-22T10:00:00+08:00");
         var document = RedeemCodeDocument.Parse("""
             {"schema_version":1,"codes":[
@@ -52,9 +63,10 @@ internal static class Program
         Check(feed.UnreadCount == 1 && feed.ShowNotice && feed.Available.Count == 1, "future codes are hidden and unread count includes available codes only");
         feed.Dismiss();
         feed.Recalculate();
-        Check(!feed.ShowNotice && feed.UnreadCount == 1, "dismiss does not mark read or immediately show the same notice");
+        Check(!feed.ShowNotice && feed.UnreadCount == 0, "dismiss acknowledges this batch without removing redeemable codes");
+        Check(GlobalConfiguration.GetValue("RedeemCodes.SmokeTest", "") == "[\"A\"]", "dismissal persists across restarts");
         feed.MarkSeen();
-        Check(feed.UnreadCount == 0 && !feed.ShowNotice, "viewing details clears notice and unread badge");
+        Check(feed.UnreadCount == 0 && !feed.ShowNotice, "viewing details acknowledges the notification");
         Check(GlobalConfiguration.GetValue("RedeemCodes.SmokeTest", "") == "[\"A\"]", "seen codes persist independently from redemption results");
         future.StartsAt = DateTimeOffset.UtcNow.AddSeconds(-1);
         feed.Recalculate();
@@ -82,7 +94,78 @@ internal static class Program
         await CheckPipelineOverrides(panel);
         future.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1);
         feed.Recalculate();
-        Check(panel.Codes.Count == 1 && feed.UnreadCount == 0, "expiry removes the row and unread badge locally");
+        Check(panel.Codes.Count == 1 && feed.UnreadCount == 0, "expiry removes the row and pending notification locally");
+        CheckNotifications(feed, panel);
+    }
+
+    private static void CheckNotifications(RedeemCodeFeed feed, RedeemCodePanelViewModel panel)
+    {
+        Check(feed.NotificationsEnabled, "new installations enable notifications by default");
+        var firstPanel = new RedeemCodePanel { DataContext = panel };
+        var secondPanel = new RedeemCodePanel { DataContext = panel };
+        var firstSwitch = firstPanel.GetLogicalDescendants().OfType<ToggleSwitch>().Single();
+        var secondSwitch = secondPanel.GetLogicalDescendants().OfType<ToggleSwitch>().Single();
+        Check(firstSwitch.IsChecked == true && secondSwitch.IsChecked == true, "redemption panels initially show the shared enabled switch");
+        Set(feed, "_seen", new HashSet<string>(StringComparer.Ordinal));
+        var a = new RedeemCode { Code = "notice-A" };
+        var b = new RedeemCode { Code = "notice-B", StartsAt = DateTimeOffset.UtcNow.AddHours(1) };
+        var document = new RedeemCodeDocument { Codes = [a, b] };
+        Set(feed, "_document", document);
+        feed.Recalculate();
+
+        using var manager = new SukiToastManager();
+        var queued = new List<ISukiToast>();
+        manager.OnToastQueued += (_, e) => queued.Add(e.Toast);
+        var opened = 0;
+        using var notification = new RedeemCodeNotification(feed, manager, () => opened++);
+        Check(queued.Count == 0, "notification waits until its host is ready");
+        notification.ShowPending();
+        var toast = queued.Single();
+        Check(toast.CanDismissByClicking && !toast.CanDismissByTime, "new-code toast can be clicked away and has no timeout");
+        Check(toast.ActionButtons.Count == 1, "notification contains only View and no extra close button");
+        feed.Recalculate();
+        b.StartsAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+        feed.Recalculate();
+        Check(queued.Count == 1 && feed.UnreadCount == 2 && !manager.IsDismissed(toast), "refresh and newly available codes update a single shared toast");
+        manager.Dismiss(toast, SukiToastDismissSource.Click);
+        Check(!feed.ShowNotice && feed.Available.Count == 2, "clicking the card acknowledges both codes without affecting redemption");
+        Set(feed, "_seen", JsonConvert.DeserializeObject<HashSet<string>>(GlobalConfiguration.GetValue("RedeemCodes.SmokeTest"))!);
+        feed.Recalculate();
+        Check(queued.Count == 1 && !feed.ShowNotice, "reloading persisted state does not notify the dismissed batch again");
+
+        document.Codes.Add(new RedeemCode { Code = "notice-C" });
+        feed.Recalculate();
+        var viewToast = queued.Last();
+        var viewButton = (Button)viewToast.ActionButtons.Single();
+        // Wire the real toast's lifecycle handlers, then click its actual action button.
+        typeof(SukiToast).GetMethod("OnLoaded", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(viewToast, [new RoutedEventArgs(Control.LoadedEvent)]);
+        viewButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Check(opened == 1 && !feed.ShowNotice && manager.IsDismissed(viewToast), "View opens the panel and acknowledges the notification");
+
+        document.Codes.Add(new RedeemCode { Code = "notice-D" });
+        feed.Recalculate();
+        var beforeMute = queued.Last();
+        firstSwitch.IsChecked = false;
+        Check(secondSwitch.IsChecked == false && !feed.NotificationsEnabled, "turning off one panel's switch updates every panel");
+        Check(!feed.ShowNotice && manager.IsDismissed(beforeMute), "turning notifications off immediately closes the current toast");
+        Check(GlobalConfiguration.GetValue(RedeemCodeFeed.NotificationsEnabledKey) == bool.FalseString, "the shared switch is persisted globally");
+        document.Codes.Add(new RedeemCode { Code = "muted-code" });
+        feed.Recalculate();
+        Check(!feed.ShowNotice && feed.UnreadCount == 0, "codes arriving while muted are silently acknowledged");
+        var queuedBeforeEnable = queued.Count;
+        // Simulate a scheduled code becoming available before the timer has run.
+        document.Codes.Add(new RedeemCode { Code = "muted-boundary" });
+        secondSwitch.IsChecked = true;
+        Check(firstSwitch.IsChecked == true && feed.NotificationsEnabled, "turning on another panel's switch updates the shared setting");
+        feed.Recalculate();
+        Check(queued.Count == queuedBeforeEnable && !feed.ShowNotice, "re-enabling does not replay muted codes, including a pending time boundary");
+        document.Codes.Add(new RedeemCode { Code = "after-enable" });
+        feed.Recalculate();
+        Check(queued.Count == queuedBeforeEnable + 1 && feed.UnreadCount == 1, "a later new code notifies normally after re-enabling");
+        feed.MarkSeen();
+        feed.Recalculate();
+        Check(!feed.ShowNotice && manager.IsDismissed(queued.Last()), "viewing the list closes the shared notification without a repeat");
     }
 
     private static JToken RunArguments(JToken layer) =>

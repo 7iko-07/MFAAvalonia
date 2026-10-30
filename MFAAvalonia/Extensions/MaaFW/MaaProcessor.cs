@@ -1,4 +1,4 @@
-﻿using Avalonia.Controls;
+using Avalonia.Controls;
 using Avalonia.Controls.Notifications;
 using Avalonia.Media;
 using MaaFramework.Binding;
@@ -38,7 +38,7 @@ namespace MFAAvalonia.Extensions.MaaFW;
 #pragma warning  disable CS4014 // 由于此调用不会等待，因此在此调用完成之前将会继续执行当前方法.
 #pragma warning  disable CS1998 // 此异步方法缺少 "await" 运算符，将以同步方式运行。
 #pragma warning disable CA1416 //  可在 'linux', 'macOS/OSX', 'windows' 上访问此调用站点。
-public class MaaProcessor
+public partial class MaaProcessor
 {
     #region 属性
 
@@ -449,7 +449,7 @@ public class MaaProcessor
         {
             DispatcherHelper.PostOnMainThread(() =>
             {
-                Instances.RootViewModel.IsRunning = Processors.Any(p => p.TaskQueue.Count > 0);
+                Instances.RootViewModel.IsRunning = Processors.Any(p => p.TaskQueue.Count > 0 || p.ViewModel?.IsRunning == true);
             });
 
             if (_taskQueueTotal <= 0)
@@ -512,6 +512,8 @@ public class MaaProcessor
 
     public void Dispose()
     {
+        EndTasks.Cancel(_endTaskRun);
+        EndTasks.Settle(_endTaskRun, false);
         ViewModel?.DisposeRedeemCodes();
         _isClosed = true;
         DisposeScreenshotTasker();
@@ -1581,9 +1583,9 @@ public class MaaProcessor
                     var isNullReference = ex is NullReferenceException
                         || ex.Message.Contains("Object reference not set to an instance of an object.", StringComparison.OrdinalIgnoreCase);
                     if (isNullReference)
-                        ToastHelper.Error(LangKeys.AgentStartFailed.ToLocalization());
+                        ToastHelper.Error(LangKeys.AgentStartFailed.ToLocalization(), instanceId: InstanceId);
                     else
-                        ToastHelper.Error(LangKeys.AgentStartFailed.ToLocalization(), ex.Message);
+                        ToastHelper.Error(LangKeys.AgentStartFailed.ToLocalization(), ex.Message, instanceId: InstanceId);
                     AgentHelper.KillAllAgents(_agentContexts);
                     ShouldRetry = false;
                     return (null, InvalidResource, ShouldRetry);
@@ -1869,7 +1871,7 @@ public class MaaProcessor
         bool showToast = true)
     {
         if (showToast)
-            ToastHelper.Error(message);
+            ToastHelper.Error(message, instanceId: InstanceId);
         if (hasWarning)
             LoggerHelper.Warning(waringMessage);
         LoggerHelper.Error($"初始化控制器失败：message={message}, reason={e.Message}", e);
@@ -1883,7 +1885,7 @@ public class MaaProcessor
         bool showToast = true)
     {
         if (showToast)
-            ToastHelper.Error(title, message);
+            ToastHelper.Error(title, message, instanceId: InstanceId);
         if (hasWarning)
             LoggerHelper.Warning(waringMessage);
         LoggerHelper.Error($"初始化控制器失败：title={title}, message={message}, reason={e.Message}", e);
@@ -2369,8 +2371,7 @@ public class MaaProcessor
         }
         catch (Exception ex)
         {
-            ToastHelper.Error(LangKeys.PipelineLoadError.ToLocalizationFormatted(false, ex.Message)
-            );
+            ToastHelper.Error(LangKeys.PipelineLoadError.ToLocalizationFormatted(false, ex.Message), instanceId: InstanceId);
             LoggerHelper.Error($"加载任务管线失败：reason={ex.Message}", ex);
             return false;
         }
@@ -2405,7 +2406,7 @@ public class MaaProcessor
             {
                 if (!taskDictionary.ContainsKey(task))
                 {
-                    ToastHelper.Error(LangKeys.Error.ToLocalization(), LangKeys.TaskNotFoundError.ToLocalizationFormatted(false, taskName, name, task));
+                    ToastHelper.Error(LangKeys.Error.ToLocalization(), LangKeys.TaskNotFoundError.ToLocalizationFormatted(false, taskName, name, task), instanceId: InstanceId);
                     LoggerHelper.Error(LangKeys.TaskNotFoundError.ToLocalizationFormatted(false, taskName, name, task));
                 }
             }
@@ -2870,49 +2871,88 @@ public class MaaProcessor
     public async Task StartTask(List<DragItemViewModel>? tasks, bool onlyStart = false, bool checkUpdate = false)
     {
         using var logScope = BeginInstanceLogScope("ExecuteTaskQueue", "Worker");
+        if (EndTasks.IsActive(_endTaskRun))
+        {
+            ReportEndTaskFailure("EndTaskBusy");
+            return;
+        }
         ResetActionFailedCount();
         Interlocked.Exchange(ref _stopCompletionMessageHandled, 0);
         Status = MFATask.MFATaskStatus.NOT_STARTED;
         CancellationTokenSource = new CancellationTokenSource();
 
-        _startTime = DateTime.Now;
-
+        tasks ??= [];
+        if (!BeginEndTaskRun(tasks, onlyStart)) return;
+        var run = _endTaskRun!;
         var token = CancellationTokenSource.Token;
 
-        if (MaaTasker != null
-            && HasReusableMainTasker()
-            && !await EnsureAgentsStartedAsync(MaaTasker, token))
+        try
         {
-            return;
-        }
+            _startTime = DateTime.Now;
 
-        if (!onlyStart)
-        {
-            tasks ??= new List<DragItemViewModel>();
-            _tempTasks = tasks;
-            LoggerHelper.Info($"准备执行任务队列：任务数量={tasks.Count}");
-            var taskAndParams = tasks.Select((task, index) => CreateNodeAndParam(task, index + 1)).ToList();
-            InitializeConnectionTasksAsync(token);
-            AddCoreTasksAsync(taskAndParams, token);
-        }
+            var needsController = !onlyStart && tasks.Any(task =>
+                task.InterfaceItem?.RequiresPipeline == true);
+            if (needsController && MaaTasker != null
+                && HasReusableMainTasker()
+                && !await EnsureAgentsStartedAsync(MaaTasker, token))
+            {
+                Status = MFATask.MFATaskStatus.FAILED;
+                await FinishEndTaskRunAsync(run, onlyStart, token);
+                return;
+            }
 
-        AddPostTasksAsync(onlyStart, checkUpdate, token);
-        _taskQueueTotal = TaskQueue.Count;
-        if (_taskQueueTotal > 0)
-        {
-            SetTaskbarProgress(0, _taskQueueTotal);
-        }
-        else
-        {
-            ClearTaskbarProgress();
-        }
+            if (!onlyStart)
+            {
+                _tempTasks = tasks;
+                LoggerHelper.Info($"准备执行任务队列：任务数量={tasks.Count}");
+                var taskAndParams = tasks.Where(task => task.InterfaceItem?.ShouldRunPipeline == true)
+                    .Select((task, index) => CreateNodeAndParam(task, index + 1)).ToList();
+                // Application exit alone needs no controller or Agent. Other tasks,
+                // including the existing StopApp pipeline, retain normal preparation.
+                if (taskAndParams.Count > 0 || tasks.Any(task => task.InterfaceItem?.ShouldStartEmulator == true ||
+                        task.InterfaceItem?.RequiresPipeline == true))
+                    InitializeConnectionTasksAsync(token, tasks);
+                AddCoreTasksAsync(taskAndParams, token);
+            }
 
-        await TaskManager.RunTaskAsync(async () =>
-        {
-            await ExecuteTasks(token);
-            Stop(Status, true, onlyStart);
-        }, token: token, name: "启动任务");
+            AddPostTasksAsync(onlyStart, checkUpdate, token);
+            _taskQueueTotal = TaskQueue.Count;
+            if (_taskQueueTotal > 0)
+            {
+                SetTaskbarProgress(0, _taskQueueTotal);
+            }
+            else
+            {
+                ClearTaskbarProgress();
+            }
 
+            await TaskManager.RunTaskAsync(async () =>
+            {
+                try
+                {
+                    await ExecuteTasks(token);
+                }
+                catch (OperationCanceledException)
+                {
+                    Status = MFATask.MFATaskStatus.STOPPED;
+                }
+                catch (Exception ex)
+                {
+                    LoggerHelper.Error($"执行队列或结束后任务失败：{ex.Message}", ex);
+                    Status = MFATask.MFATaskStatus.FAILED;
+                }
+                await FinishEndTaskRunAsync(run, onlyStart, token);
+            }, token: token, name: "启动任务");
+        }
+        catch (Exception ex)
+        {
+            LoggerHelper.Error($"准备任务队列失败：{ex.Message}", ex);
+            if (ReferenceEquals(_endTaskRun, run))
+            {
+                Status = token.IsCancellationRequested ? MFATask.MFATaskStatus.STOPPED : MFATask.MFATaskStatus.FAILED;
+                await FinishEndTaskRunAsync(run, onlyStart, token);
+            }
+        }
     }
 
     async private Task ExecuteTasks(CancellationToken token)
@@ -3310,12 +3350,22 @@ public class MaaProcessor
                ?? controllerType.ToJsonKey();
     }
 
-    private void InitializeConnectionTasksAsync(CancellationToken token)
+    private void InitializeConnectionTasksAsync(CancellationToken token, List<DragItemViewModel> tasks)
     {
         TaskQueue.Enqueue(CreateMFATask(LangKeys.Prescript.ToLocalization(), async () =>
         {
             await TaskManager.RunTaskAsync(async () => await RunScript(), token: token, name: "启动附加开始脚本");
         }));
+
+        foreach (var task in tasks.Where(task => task.InterfaceItem?.ShouldStartEmulator == true))
+        {
+            TaskQueue.Enqueue(CreateMFATask(task.Name, async () =>
+            {
+                AddLogByKey(LangKeys.TaskStart, (IBrush?)null, true, true, task.Name);
+                ViewModel?.SetCurrentTaskName(task.Name);
+                await StartEmulatorTaskAsync(token);
+            }));
+        }
 
         TaskQueue.Enqueue(CreateMFATask(LangKeys.Connection.ToLocalization(), async () =>
         {
@@ -3382,7 +3432,7 @@ public class MaaProcessor
             if (showMessage)
                 AddLogByKey(LangKeys.ConnectingTo, (IBrush?)null, true, true, targetKey);
             else
-                ToastHelper.Info(LangKeys.Tip.ToLocalization(), LangKeys.ConnectingTo.ToLocalizationFormatted(true, targetKey));
+                ToastHelper.Info(LangKeys.Tip.ToLocalization(), LangKeys.ConnectingTo.ToLocalizationFormatted(true, targetKey), instanceId: InstanceId);
 
             if (isAdb)
             {
@@ -3532,7 +3582,7 @@ public class MaaProcessor
         if (showMessage)
             AddLog(LangKeys.ConnectFailed.ToLocalization() + "\n" + logKey.ToLocalization(), (IBrush?)null);
         else
-            ToastHelper.Info(LangKeys.ConnectFailed.ToLocalization(), logKey.ToLocalization());
+            ToastHelper.Info(LangKeys.ConnectFailed.ToLocalization(), logKey.ToLocalization(), instanceId: InstanceId);
         await action();
         if (token.IsCancellationRequested)
         {
@@ -3573,8 +3623,10 @@ public class MaaProcessor
             MaaControllerTypes.PlayCover => LangKeys.TabPlayCover,
             _ => LangKeys.Window
         };
-        ToastHelper.Warn(LangKeys.Warning_CannotConnect.ToLocalizationFormatted(true, targetKey));
-        Stop(MFATask.MFATaskStatus.STOPPED);
+        ToastHelper.Warn(LangKeys.Warning_CannotConnect.ToLocalizationFormatted(true, targetKey), instanceId: InstanceId);
+        // The queue caller reports this automatic connection failure as FAILED.
+        // Do not turn it into the same cancellation used by a manual stop.
+        if (!EndTasks.IsActive(_endTaskRun)) Stop(MFATask.MFATaskStatus.STOPPED);
     }
 
 
@@ -3596,7 +3648,8 @@ public class MaaProcessor
 
     async private Task TryRunTasksAsync(MaaTasker? maa, string? task, string? param, CancellationToken token)
     {
-        if (maa == null || task == null) return;
+        if (maa == null || string.IsNullOrWhiteSpace(task))
+            throw new InvalidOperationException("Cannot run a pipeline without a tasker and entry.");
 
         var redeemCodes = ViewModel?.RedeemCodes;
         if (redeemCodes?.IsRedeemTask(task) == true)
@@ -3703,6 +3756,8 @@ public class MaaProcessor
 
     private Task StopInternal(MFATask.MFATaskStatus status, bool finished, bool onlyStart, Action? action)
     {
+        var endingRun = _endTaskRun;
+        if (!finished) EndTasks.Cancel(endingRun);
         using var logScope = BeginInstanceLogScope("StopTask", "Worker");
         ResetActionFailedCount();
         ClearTaskbarProgress();
@@ -3730,9 +3785,10 @@ public class MaaProcessor
                         StopAgents();
                     }
 
-                    ToastHelper.Warn(LangKeys.NoTaskToStop.ToLocalization());
+                    ToastHelper.Warn(LangKeys.NoTaskToStop.ToLocalization(), instanceId: InstanceId);
 
                     TaskQueue.Clear();
+                    EndTasks.Settle(endingRun, false);
                     return Task.CompletedTask;
                 }
 
@@ -3791,6 +3847,10 @@ public class MaaProcessor
                             ViewModel.IsRunning = false;
                             ViewModel.ToggleEnable = true;
                         }
+                        EndTasks.Settle(endingRun,
+                            (status is MFATask.MFATaskStatus.SUCCEEDED or MFATask.MFATaskStatus.FAILED) &&
+                            stopResult == MaaJobStatus.Succeeded);
+                        Instances.RootViewModel.IsRunning = Processors.Any(processor => processor.ViewModel?.IsRunning == true);
                     });
                 });
             }
@@ -3805,6 +3865,7 @@ public class MaaProcessor
                     }
                 });
                 HandleStopException(ex);
+                EndTasks.Settle(endingRun, false);
             }
         }
 
@@ -3845,7 +3906,8 @@ public class MaaProcessor
 
             stopAction.Invoke();
 
-            DispatcherHelper.PostOnMainThread(() => Instances.RootViewModel.Idle = true);
+            DispatcherHelper.PostOnMainThread(() => Instances.RootViewModel.Idle =
+                Instances.InstanceTabBarViewModel.ActiveTab?.TaskQueueViewModel.Idle ?? true);
         }, null, "停止maafw任务");
     }
 
@@ -3874,7 +3936,7 @@ public class MaaProcessor
         }
         else
         {
-            ToastHelper.Error(LangKeys.StoppingFailed.ToLocalization());
+            ToastHelper.Error(LangKeys.StoppingFailed.ToLocalization(), instanceId: InstanceId);
         }
         if (isUpdateRelated)
         {
@@ -3894,7 +3956,7 @@ public class MaaProcessor
 
         if (status == MFATask.MFATaskStatus.FAILED)
         {
-            ToastHelper.Info(LangKeys.TaskFailed.ToLocalization());
+            ToastHelper.Info(LangKeys.TaskFailed.ToLocalization(), instanceId: InstanceId);
             AddLogByKey(LangKeys.TaskFailed, (IBrush?)null);
             ExternalNotificationHelper.ExternalNotificationAsync(Instances.ExternalNotificationSettingsUserControlModel.EnabledCustom
                 ? Instances.ExternalNotificationSettingsUserControlModel.CustomFailureText
@@ -3907,7 +3969,7 @@ public class MaaProcessor
                 Task.Delay(400).ContinueWith(_ =>
                 {
 
-                    ToastHelper.Info(LangKeys.TaskStopped.ToLocalization());
+                    ToastHelper.Info(LangKeys.TaskStopped.ToLocalization(), instanceId: InstanceId);
                     AddLogByKey(LangKeys.TaskAbandoned, (IBrush?)null);
                 });
             });
@@ -3946,7 +4008,7 @@ public class MaaProcessor
                 ExternalNotificationHelper.ExternalNotificationAsync(Instances.ExternalNotificationSettingsUserControlModel.EnabledCustom
                     ? Instances.ExternalNotificationSettingsUserControlModel.CustomSuccessText
                     : LangKeys.TaskAllCompleted.ToLocalization());
-                HandleAfterTaskOperation();
+                if (!_runHasEndTasks) HandleAfterTaskOperation();
             }
         }
         action?.Invoke();
@@ -4044,7 +4106,7 @@ public class MaaProcessor
     private void HandleStopException(Exception ex)
     {
         LoggerHelper.Error($"停止操作失败：{ex.Message}");
-        ToastHelper.Error(LangKeys.StoppingFailed.ToLocalization());
+        ToastHelper.Error(LangKeys.StoppingFailed.ToLocalization(), instanceId: InstanceId);
     }
 
     #endregion
@@ -4077,6 +4139,27 @@ public class MaaProcessor
             InstanceConfiguration.GetValue(ConfigurationKeys.WaitSoftwareTime, 60.0), _emulatorCancellationTokenSource.Token);
     }
 
+    private async Task StartEmulatorTaskAsync(CancellationToken token)
+    {
+        try
+        {
+            token.ThrowIfCancellationRequested();
+            if (ViewModel?.IsConnected == true && MaaTasker?.Controller?.IsConnected == true)
+                return;
+
+            await StartRunnableFile(InstanceConfiguration.GetValue(ConfigurationKeys.SoftwarePath, string.Empty),
+                InstanceConfiguration.GetValue(ConfigurationKeys.WaitSoftwareTime, 60.0), token, requireConnection: true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            EndTasks.Cancel(_endTaskRun);
+            var message = "StartEmulatorFailed".ToLocalizationFormatted(false, ex.Message);
+            AddLog(message, (IBrush?)null);
+            ToastHelper.Warn(message, instanceId: InstanceId);
+            throw;
+        }
+    }
+
     private bool CanStartSoftware(out string reason)
     {
         var exePath = InstanceConfiguration.GetValue(ConfigurationKeys.SoftwarePath, string.Empty);
@@ -4096,16 +4179,19 @@ public class MaaProcessor
         return true;
     }
 
-    async private Task StartRunnableFile(string exePath, double waitTimeInSeconds, CancellationToken token)
+    async private Task StartRunnableFile(string exePath, double waitTimeInSeconds, CancellationToken token,
+        bool requireConnection = false)
     {
         if (string.IsNullOrWhiteSpace(exePath))
         {
+            if (requireConnection) throw new InvalidOperationException("StartEmulatorPathInvalid".ToLocalization());
             LoggerHelper.Warning("已跳过启动程序，因为 SoftwarePath 为空。");
             return;
         }
 
         if (!File.Exists(exePath))
         {
+            if (requireConnection) throw new InvalidOperationException("StartEmulatorPathInvalid".ToLocalization());
             LoggerHelper.Warning($"已跳过启动程序，因为文件不存在：{exePath}");
             return;
         }
@@ -4119,8 +4205,6 @@ public class MaaProcessor
                 exePath = resolved;
             }
         }
-
-        var processName = Path.GetFileNameWithoutExtension(exePath);
 
         // 检查当前控制器是否需要管理员权限
         var requiresAdmin = ShouldStartWithAdminPrivileges();
@@ -4139,37 +4223,16 @@ public class MaaProcessor
             LoggerHelper.Info("以管理员权限启动软件");
         }
 
-        if (Process.GetProcessesByName(processName).Length == 0)
-        {
-            if (!string.IsNullOrWhiteSpace(InstanceConfiguration.GetValue(ConfigurationKeys.EmulatorConfig, string.Empty)))
-            {
-                startInfo.Arguments = InstanceConfiguration.GetValue(ConfigurationKeys.EmulatorConfig, string.Empty);
-                _softwareProcess =
-                    Process.Start(startInfo);
-            }
-            else
-                _softwareProcess = Process.Start(startInfo);
-        }
-        else
-        {
-            if (!string.IsNullOrWhiteSpace(InstanceConfiguration.GetValue(ConfigurationKeys.EmulatorConfig, string.Empty)))
-            {
-                startInfo.Arguments = InstanceConfiguration.GetValue(ConfigurationKeys.EmulatorConfig, string.Empty);
-                _softwareProcess = Process.Start(startInfo);
-            }
-            else
-                _softwareProcess = Process.Start(startInfo);
-        }
+        startInfo.Arguments = InstanceConfiguration.GetValue(ConfigurationKeys.EmulatorConfig, string.Empty);
+        _softwareProcess = Process.Start(startInfo);
 
-        await WaitForStartupConnectionWindowAsync(waitTimeInSeconds, token);
+        if (!await WaitForStartupConnectionWindowAsync(waitTimeInSeconds, token) && requireConnection)
+            throw new InvalidOperationException("StartEmulatorConnectionFailed".ToLocalization());
     }
 
-    private async Task WaitForStartupConnectionWindowAsync(double waitTimeInSeconds, CancellationToken token)
+    private async Task<bool> WaitForStartupConnectionWindowAsync(double waitTimeInSeconds, CancellationToken token)
     {
         var connectionWindow = TimeSpan.FromSeconds(Math.Max(0, waitTimeInSeconds));
-        if (connectionWindow <= TimeSpan.Zero)
-            return;
-
         var targetKey = (ViewModel?.CurrentController ?? MaaControllerTypes.Adb) switch
         {
             MaaControllerTypes.Adb => LangKeys.Emulator,
@@ -4187,7 +4250,7 @@ public class MaaProcessor
 
         try
         {
-            while (DateTime.UtcNow <= deadline)
+            while (true)
             {
                 token.ThrowIfCancellationRequested();
                 attempt++;
@@ -4205,13 +4268,13 @@ public class MaaProcessor
                     AddLogByKey(LangKeys.StartupConnectSucceededDelay, (IBrush?)null, true, true, targetKey);
                     LoggerHelper.Info($"启动后连接在第 {attempt} 次尝试时成功，继续执行前等待 5 秒。");
                     await Task.Delay(TimeSpan.FromSeconds(5), token);
-                    return;
+                    return true;
                 }
 
                 if (!tuple.Item3)
                 {
                     LoggerHelper.Warning($"启动后连接在第 {attempt} 次尝试后停止重试，因为当前错误不可重试。");
-                    return;
+                    return false;
                 }
 
                 var remainingSeconds = Math.Max(0, (int)Math.Ceiling((deadline - DateTime.UtcNow).TotalSeconds));
@@ -4233,6 +4296,7 @@ public class MaaProcessor
         }
 
         LoggerHelper.Warning($"启动后连接等待窗口已超时：{Math.Max(0, waitTimeInSeconds):0.#} 秒。");
+        return false;
     }
 
     [SupportedOSPlatform("windows")]

@@ -23,7 +23,11 @@
 
     <suki:SukiMainHost>
         <suki:SukiMainHost.Hosts>
-            <suki:SukiToastHost Manager="{x:Static helper:Instances.ToastManager}" />
+            <StackPanel HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                <suki:SukiToastHost Manager="{x:Static helper:Instances.ToastManager}" />
+                <suki:SukiToastHost Manager="{Binding Manager, Source={x:Static helper:RedeemCodeNotification.Instance}}"
+                                    MaxToasts="1" Position="BottomRight" />
+            </StackPanel>
             <suki:SukiDialogHost Manager="{x:Static helper:Instances.DialogManager}" />
         </suki:SukiMainHost.Hosts>
         <mobile:RootViewContent />

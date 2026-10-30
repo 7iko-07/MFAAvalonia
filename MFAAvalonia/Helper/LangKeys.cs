@@ -20,10 +20,11 @@ public static class LangKeys
     public static readonly string RedeemBusy = "RedeemBusy";
     public static readonly string RedeemAvailable = "RedeemAvailable";
     public static readonly string RedeemNewNotice = "RedeemNewNotice";
-    public static readonly string RedeemNewBadge = "RedeemNewBadge";
+    public static readonly string RedeemNotifyNewCodes = "RedeemNotifyNewCodes";
     public static readonly string RedeemExpires = "RedeemExpires";
     public static readonly string RedeemExpiryUnknown = "RedeemExpiryUnknown";
     public static readonly string RedeemRunning = "RedeemRunning";
+    public static readonly string RedeemNotRedeemed = "RedeemNotRedeemed";
     public static readonly string RedeemProgress = "RedeemProgress";
     public static readonly string RedeemNotCompleted = "RedeemNotCompleted";
 
@@ -704,6 +705,8 @@ public static class LangKeys
 	public static readonly string RemoveTimer = "RemoveTimer";
 	public static readonly string TimerStopConnectedProcess = "TimerStopConnectedProcess";
 	public static readonly string TimerStopMFA = "TimerStopMFA";
+	public static readonly string TaskOptionEnableConfirmationTitle = "TaskOptionEnableConfirmationTitle";
+	public static readonly string TaskOptionConfirmEnable = "TaskOptionConfirmEnable";
 	
 }
 

@@ -190,6 +190,10 @@ public partial class MaaInterface
         [JsonProperty("description")]
         public string? Description { get; set; }
 
+        /// <summary>MFA 扩展：开关从关闭切到开启时的确认提示，未配置则直接切换。</summary>
+        [JsonProperty("__mfa_confirm_on_enable")]
+        public string? ConfirmOnEnable { get; set; }
+
         /// <summary>配置项图标文件路径</summary>
         [JsonProperty("icon")]
         public string? Icon { get; set; }
@@ -527,6 +531,7 @@ public partial class MaaInterface
              if (other == null) return;
              if (!string.IsNullOrEmpty(other.Label)) Label = other.Label;
              if (!string.IsNullOrEmpty(other.Description)) Description = other.Description;
+             if (other.ConfirmOnEnable != null) ConfirmOnEnable = other.ConfirmOnEnable;
              if (!string.IsNullOrEmpty(other.Icon)) Icon = other.Icon;
              if (other.Cases != null) Cases = other.Cases;
              if (other.Inputs != null) Inputs = other.Inputs;
@@ -625,6 +630,32 @@ public partial class MaaInterface
         /// <summary>任务入口，为 pipeline 中 Task 的名称</summary>
         [JsonProperty("entry")] public string? Entry;
 
+        public const string StartEmulatorEntry = "__mfa_start_emulator";
+
+        [JsonIgnore] public bool IsStartTask => Entry == StartEmulatorEntry;
+
+        // The resource's existing game entry also hosts the client startup switches.
+        [JsonProperty("__mfa_startup")] public bool IsStartupTask;
+        [JsonProperty("start_emulator")] public bool StartEmulator;
+        [JsonProperty("start_game")] public bool StartGame;
+        [JsonProperty("__mfa_shutdown")] public bool IsShutdownTask;
+        [JsonProperty("close_game")] public bool CloseGame;
+        [JsonProperty("close_emulator")] public bool CloseEmulator;
+        [JsonProperty("close_application")] public bool CloseApplication;
+
+        [JsonIgnore] public bool IsPinnedTask => IsStartupTask || IsShutdownTask;
+        [JsonIgnore] public bool HasEndActions => IsShutdownTask
+            ? CloseGame || CloseEmulator || CloseApplication : IsEndTask;
+        [JsonIgnore] public bool RequiresPipeline => ShouldRunPipeline ||
+            (IsShutdownTask ? CloseGame : EndAction == EndTaskPolicy.Pipeline);
+        [JsonIgnore] public bool RequiresDevice => RequiresPipeline || ShouldStartEmulator ||
+            (IsShutdownTask ? CloseEmulator : EndAction == EndTaskPolicy.CloseEmulator);
+
+        [JsonIgnore] public bool ShouldStartEmulator => IsStartTask || IsStartupTask && StartEmulator;
+        [JsonIgnore] public bool ShouldRunPipeline => !IsStartTask && !IsEndTask && (!IsStartupTask || StartGame);
+
+        [JsonIgnore] public bool IsClientTask => ClientTaskProvider.IsClientEntry(Entry);
+
         /// <summary>是否默认选中该任务。Client在初始化时会根据该值决定是否默认勾选该任务。</summary>
         [JsonProperty("default_check",
             NullValueHandling = NullValueHandling.Include,
@@ -633,6 +664,11 @@ public partial class MaaInterface
 
         /// <summary>是否在点击“全选”时保持未选中。用户仍可手动勾选该任务。</summary>
         [JsonProperty("exclude_from_select_all")] public bool? ExcludeFromSelectAll;
+
+        /// <summary>MFA extension: Pipeline, CloseEmulator or CloseMFA; cleanup follows this run's error policy.</summary>
+        [JsonProperty("__mfa_end_action")] public string? EndAction;
+
+        [JsonIgnore] public bool IsEndTask => IsShutdownTask || !string.IsNullOrWhiteSpace(EndAction);
 
         /// <summary>任务详细描述信息，帮助用户理解任务功能。支持文件路径、URL或直接文本，内容支持Markdown格式。</summary>
         [JsonProperty("description")] public string? Description;
@@ -749,6 +785,7 @@ public partial class MaaInterface
              if (!string.IsNullOrEmpty(other.Entry)) Entry = other.Entry;
              if (other.Check != null) Check = other.Check;
              if (other.ExcludeFromSelectAll != null) ExcludeFromSelectAll = other.ExcludeFromSelectAll;
+             if (other.EndAction != null) EndAction = other.EndAction;
              if (!string.IsNullOrEmpty(other.Description)) Description = other.Description;
              if (!string.IsNullOrEmpty(other.Icon)) Icon = other.Icon;
              if (other.Resource != null) Resource = other.Resource;
@@ -1128,6 +1165,10 @@ public partial class MaaInterface
         [JsonProperty("label")]
         public string? Label { get; set; }
 
+        /// <summary>MFA 扩展：覆盖此预设中的分组；null 继承模板，空列表表示独立任务。</summary>
+        [JsonProperty("group")]
+        public List<string>? Group { get; set; }
+
         /// <summary>该任务在预设中是否勾选，默认 true</summary>
         [JsonProperty("enabled")]
         public bool? Enabled { get; set; }
@@ -1163,6 +1204,10 @@ public partial class MaaInterface
         /// <summary>预设图标文件路径，相对于项目根目录，支持国际化</summary>
         [JsonProperty("icon")]
         public string? Icon { get; set; }
+
+        /// <summary>MFA 扩展：此预设的分组声明；null 继承顶层声明，空列表表示不声明分组。</summary>
+        [JsonProperty("group")]
+        public List<MaaInterfaceTaskGroup>? Group { get; set; }
 
         /// <summary>预设包含的任务配置列表</summary>
         [JsonProperty("task")]

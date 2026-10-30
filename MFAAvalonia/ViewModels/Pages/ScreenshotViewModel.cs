@@ -35,7 +35,7 @@ public partial class ScreenshotViewModel : ViewModelBase
 
             if (vm.Processor.MaaTasker is not { IsInitialized: true })
             {
-                ToastHelper.Info(LangKeys.Tip.ToLocalization(), LangKeys.ConnectingTo.ToLocalizationFormatted(true, vm.CurrentController == MaaControllerTypes.Adb ? "Emulator" : "Window"));
+                ToastHelper.Info(LangKeys.Tip.ToLocalization(), LangKeys.ConnectingTo.ToLocalizationFormatted(true, vm.CurrentController == MaaControllerTypes.Adb ? "Emulator" : "Window"), instanceId: vm.Processor.InstanceId);
                 vm.Processor.TaskQueue.Enqueue(new MFATask
                 {
                     Name = "截图前启动",
@@ -51,7 +51,7 @@ public partial class ScreenshotViewModel : ViewModelBase
                     {
                         var bitmap = vm.Processor.GetLiveView();
                         if (bitmap == null)
-                            ToastHelper.Warn(LangKeys.ScreenshotFailed.ToLocalization());
+                            ToastHelper.Warn(LangKeys.ScreenshotFailed.ToLocalization(), instanceId: vm.Processor.InstanceId);
 
                         DispatcherHelper.PostOnMainThread((() =>
                         {
@@ -71,7 +71,7 @@ public partial class ScreenshotViewModel : ViewModelBase
                 {
                     var bitmap = vm.Processor.GetLiveViewCached();
                     if (bitmap == null)
-                        ToastHelper.Warn(LangKeys.ScreenshotFailed.ToLocalization());
+                        ToastHelper.Warn(LangKeys.ScreenshotFailed.ToLocalization(), instanceId: vm.Processor.InstanceId);
 
                     DispatcherHelper.PostOnMainThread((() =>
                     {

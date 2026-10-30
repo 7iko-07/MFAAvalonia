@@ -57,26 +57,10 @@ public partial class TaskQueueView : UserControl
     public TaskQueueView()
     {
         InitializeComponent();
+        ConfigureTaskGroupDragDrop();
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         DataContextChanged += OnDataContextChanged;
-    }
-
-    private void TaskGroupHeader_OnPointerPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (sender is not Grid { DataContext: MFAAvalonia.ViewModels.Other.TaskItemGroupViewModel group } header
-            || !e.GetCurrentPoint(header).Properties.IsLeftButtonPressed)
-            return;
-
-        // Keep the name editor, checkbox and action buttons independently interactive.
-        for (var visual = e.Source as Visual; visual != null && visual != header; visual = visual.GetVisualParent())
-        {
-            if (visual is Button or TextBox)
-                return;
-        }
-
-        group.IsExpanded = !group.IsExpanded;
-        e.Handled = true;
     }
 
     private void TaskGroupSelection_OnClick(object? sender, RoutedEventArgs e)
@@ -148,15 +132,18 @@ public partial class TaskQueueView : UserControl
         {
             _subscribedViewModel.PropertyChanged -= OnTaskQueueViewModelPropertyChanged;
             _subscribedViewModel.SetOptionRequested -= OnSetOptionRequested;
+            _subscribedViewModel.TaskListChanging -= OnTaskListChanging;
             _subscribedViewModel.TaskItemViewModels.CollectionChanged -= OnTaskItemsCollectionChanged;
         }
 
+        _taskListViewport = null;
         _subscribedViewModel = newVm;
 
         if (_subscribedViewModel != null)
         {
             _subscribedViewModel.PropertyChanged += OnTaskQueueViewModelPropertyChanged;
             _subscribedViewModel.SetOptionRequested += OnSetOptionRequested;
+            _subscribedViewModel.TaskListChanging += OnTaskListChanging;
             _subscribedViewModel.TaskItemViewModels.CollectionChanged += OnTaskItemsCollectionChanged;
             Dispatcher.UIThread.Post(ClearUnsupportedSelection, DispatcherPriority.Background);
         }
@@ -232,6 +219,9 @@ public partial class TaskQueueView : UserControl
     private void ClearUnsupportedSelection()
     {
         UpdateTaskItemContainerVisibility();
+
+        // The refresh restores the original selection after all items are loaded.
+        if (_taskListViewport != null) return;
 
         if (DataContext is not TaskQueueViewModel vm || TaskListBox == null)
         {
@@ -402,7 +392,7 @@ public partial class TaskQueueView : UserControl
         vm.Processor.InstanceConfiguration.SetValue(ConfigurationKeys.TaskItems,
             vm.TaskItemViewModels.Where(m => !m.IsResourceOptionItem).Select(model => model.InterfaceItem).ToList());
         listBox.SelectedItem = output;
-        ToastHelper.Info(LangKeys.Tip.ToLocalization(), LangKeys.TaskAddedToast.ToLocalizationFormatted(false, output.Name));
+        ToastHelper.Info(LangKeys.Tip.ToLocalization(), LangKeys.TaskAddedToast.ToLocalizationFormatted(false, output.Name), instanceId: vm.Processor.InstanceId);
     }
 
     private void CopyTask(object? sender, RoutedEventArgs e)
@@ -519,7 +509,7 @@ public partial class TaskQueueView : UserControl
         }
 
         vm.ShowSettings = false;
-        ToastHelper.Info(LangKeys.Tip.ToLocalization(), LangKeys.TaskDeletedToast.ToLocalizationFormatted(false, deletedName));
+        ToastHelper.Info(LangKeys.Tip.ToLocalization(), LangKeys.TaskDeletedToast.ToLocalizationFormatted(false, deletedName), instanceId: vm.Processor.InstanceId);
     }
 
     private void RunSingleTask(object? sender, RoutedEventArgs e)
@@ -660,7 +650,7 @@ public partial class TaskQueueView : UserControl
 
         item.EnableSetting = true;
 
-        var owningListBox = source?
+        var owningListBox = source as ListBox ?? source?
             .GetVisualAncestors()
             .OfType<ListBox>()
             .FirstOrDefault();
@@ -672,7 +662,8 @@ public partial class TaskQueueView : UserControl
         var isResourceOptionItem = currentItem?.IsResourceOptionItem == true;
         var canRunNow = !isResourceOptionItem && Instances.RootViewModel.Idle;
         var canEdit = currentItem != null && !isResourceOptionItem;
-        var canMove = canEdit && currentItem?.OwnerViewModel?.Idle == true;
+        var canMove = canEdit && currentItem?.InterfaceItem?.IsPinnedTask != true &&
+            currentItem?.OwnerViewModel?.Idle == true;
 
         foreach (var item in menu.Items.OfType<MenuItem>())
         {

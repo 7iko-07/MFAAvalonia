@@ -54,6 +54,7 @@ public partial class RootView : SukiWindow
         // 修改Loaded事件处理
         Loaded += (_, _) =>
         {
+            RedeemCodeNotification.Instance.ShowPending();
             LoggerHelper.Info("界面初始化开始");
 
             // 确保在UI线程上执行

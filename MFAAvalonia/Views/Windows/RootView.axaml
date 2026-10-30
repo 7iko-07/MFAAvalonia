@@ -224,7 +224,11 @@
         <windows:RootViewModel />
     </Design.DataContext>
     <suki:SukiWindow.Hosts>
-        <suki:SukiToastHost Manager="{x:Static helper:Instances.ToastManager}" />
+        <StackPanel HorizontalAlignment="Right" VerticalAlignment="Bottom">
+            <suki:SukiToastHost Manager="{x:Static helper:Instances.ToastManager}" />
+            <suki:SukiToastHost Manager="{Binding Manager, Source={x:Static helper:RedeemCodeNotification.Instance}}"
+                                MaxToasts="1" Position="BottomRight" />
+        </StackPanel>
         <suki:SukiDialogHost
             Margin="6,44,6,6"
             Manager="{x:Static helper:Instances.DialogManager}"

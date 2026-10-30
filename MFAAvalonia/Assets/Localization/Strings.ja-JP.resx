@@ -2107,6 +2107,7 @@
   <data name="TaskGroupStart" xml:space="preserve"><value>グループ内の選択済みタスクを実行</value></data>
   <data name="TaskGroupDelete" xml:space="preserve"><value>グループを削除し、タスクをグループ外に保持</value></data>
   <data name="TaskGroupToggle" xml:space="preserve"><value>グループを展開・折りたたむ</value></data>
+  <data name="TaskGroupDrag" xml:space="preserve"><value>長押ししてドラッグするとグループ全体を移動できます</value></data>
   <data name="TaskGroupSelect" xml:space="preserve"><value>グループ内のタスクをすべて選択・解除</value></data>
   <data name="TaskMoveToTop" xml:space="preserve"><value>先頭に移動</value></data>
   <data name="TaskMoveToBottom" xml:space="preserve"><value>末尾に移動</value></data>
@@ -2134,14 +2135,17 @@
   <data name="RedeemNewNotice" xml:space="preserve">
     <value>新しい交換コードが {0} 件あります</value>
   </data>
-  <data name="RedeemNewBadge" xml:space="preserve">
-    <value>新規 {0}</value>
+  <data name="RedeemNotifyNewCodes" xml:space="preserve">
+    <value>新しい交換コードを通知する</value>
   </data>
   <data name="RedeemExpires" xml:space="preserve">
     <value>{0} まで</value>
   </data>
   <data name="RedeemExpiryUnknown" xml:space="preserve">
     <value>有効期限未記載</value>
+  </data>
+  <data name="RedeemNotRedeemed" xml:space="preserve">
+    <value>未交換</value>
   </data>
   <data name="RedeemRunning" xml:space="preserve">
     <value>交換中…</value>
@@ -2158,4 +2162,25 @@
   <data name="AgentDependencyRepairStopped" xml:space="preserve">
     <value>自動修復を試みましたが、依存関係に異常が残っています。更新エラーを確認し、設定から完全なリソースパッケージを再ダウンロードしてください。自動修復は繰り返しません。</value>
   </data>
+  <data name="TaskOptionEnableConfirmationTitle" xml:space="preserve">
+    <value>有効にする前に確認</value>
+  </data>
+  <data name="TaskOptionConfirmEnable" xml:space="preserve">
+    <value>有効にする</value>
+  </data>
+  <data name="EndTaskGroup" xml:space="preserve"><value>完了後に実行</value></data>
+  <data name="EndTaskDescription" xml:space="preserve"><value>タスク終了後に終了処理を実行します。失敗時は現在の設定の「エラー後も続行」に従います。手動停止時は実行しません。設定の「完了後の操作」とは併用できません。</value></data>
+  <data name="EndTaskConflict" xml:space="preserve"><value>完了後タスクと設定の「完了後の操作」が両方有効です。どちらかを無効にしてください。</value></data>
+  <data name="EndTaskWaiting" xml:space="preserve"><value>通常タスクが終了しました。関連設定の実行終了を待って終了処理を実行します。</value></data>
+  <data name="EndTaskExecuting" xml:space="preserve"><value>完了後に実行：{0}</value></data>
+  <data name="EndTaskCancelled" xml:space="preserve"><value>関連設定が終了処理の条件を満たさないため、残りの終了処理を中止しました。ログを確認してください。</value></data>
+  <data name="EndTaskFailed" xml:space="preserve"><value>終了処理が失敗したか対象を確認できません。残りの終了処理を中止しました。ログを確認してください。</value></data>
+  <data name="EndTaskExitCancelled" xml:space="preserve"><value>終了条件を満たさない設定、または手動停止された設定があるため、本プログラムの自動終了を中止しました。</value></data>
+  <data name="EndTaskBusy" xml:space="preserve"><value>このタブは実行中、または対象デバイス／本プログラムは終了処理中です。新しいタスクを開始できません。</value></data>
+  <data name="EndTaskInvalid" xml:space="preserve"><value>完了後タスクの設定が無効、または現在のコントローラーに対応していません。ログと設定を確認してください。</value></data>
+  <data name="StartEmulatorFailed" xml:space="preserve"><value>エミュレーターの起動に失敗しました：{0}</value></data>
+  <data name="StartEmulatorPathInvalid" xml:space="preserve"><value>設定で有効なゲームのパスを指定してください。</value></data>
+  <data name="StartEmulatorConnectionFailed" xml:space="preserve"><value>エミュレーターに接続できませんでした。起動引数と接続設定を確認するか、待機時間を増やしてください。</value></data>
+  <data name="StartEmulatorTask" xml:space="preserve"><value>エミュレーターを起動</value></data>
+  <data name="StartTaskGroup" xml:space="preserve"><value>開始前に実行</value></data>
 </root>

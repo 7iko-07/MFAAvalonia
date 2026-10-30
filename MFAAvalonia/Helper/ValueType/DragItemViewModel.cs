@@ -51,8 +51,6 @@ public partial class DragItemViewModel : ObservableObject
 
     [ObservableProperty] private string _name = string.Empty;
 
-    [ObservableProperty] [JsonIgnore] private string? _redeemCodeBadge;
-
     /// <summary>验证不通过时标记为 true，用于 UI 红圈提示</summary>
     [ObservableProperty] [JsonIgnore] private bool _hasValidationError;
 
@@ -131,7 +129,7 @@ public partial class DragItemViewModel : ObservableObject
             if (value != null)
             {
                 value.LocalId ??= Guid.NewGuid().ToString("N");
-                IsVisible = value is { Advanced.Count: > 0 } || value is { Option.Count: > 0 } || value.Repeatable == true || !string.IsNullOrWhiteSpace(value.Description) || value.Document is { Count: > 0 };
+                IsVisible = value.IsStartTask || value is { Advanced.Count: > 0 } || value is { Option.Count: > 0 } || value.Repeatable == true || !string.IsNullOrWhiteSpace(value.Description) || value.Document is { Count: > 0 };
                 IsCheckedWithNull = value.Check;
             }
 
@@ -294,7 +292,9 @@ public partial class DragItemViewModel : ObservableObject
             ? InterfaceItem.Remark!
             : !string.IsNullOrWhiteSpace(InterfaceItem.DisplayNameOverride)
                 ? InterfaceItem.DisplayNameOverride!
-                : LanguageHelper.GetLocalizedDisplayName(InterfaceItem.DisplayName, InterfaceItem.Name ?? LangKeys.Unnamed);
+                : InterfaceItem.IsClientTask
+                    ? ClientTaskProvider.LabelKey(InterfaceItem.Entry).ToLocalization()
+                    : LanguageHelper.GetLocalizedDisplayName(InterfaceItem.DisplayName, InterfaceItem.Name ?? LangKeys.Unnamed);
 
         Name = displayName;
     }

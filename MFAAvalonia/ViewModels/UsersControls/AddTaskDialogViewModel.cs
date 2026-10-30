@@ -141,7 +141,7 @@ public partial class AddTaskDialogViewModel : ViewModelBase, IDisposable
         var totalAdded = Sources.Sum(s => s.AddCount) + SpecialTasks.Sum(s => s.AddCount);
         if (totalAdded > 0)
             ToastHelper.Info(LangKeys.Tip.ToLocalization(),
-                LangKeys.TaskAddedToast.ToLocalizationFormatted(false, totalAdded.ToString()));
+                LangKeys.TaskAddedToast.ToLocalizationFormatted(false, totalAdded.ToString()), instanceId: vm.Processor.InstanceId);
 
         Dialog.Dismiss();
     }
@@ -269,7 +269,7 @@ public partial class AddTaskDialogViewModel : ViewModelBase, IDisposable
                     group = new AddTaskItemGroupViewModel
                     {
                         Name = groupName,
-                        Label = groupName,
+                        Label = ClientTaskProvider.GroupLabel(groupName),
                         IsExpanded = true,
                     };
                     groupDefinitions[groupName] = group;

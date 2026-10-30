@@ -20,7 +20,7 @@ public partial class TaskItemGroupViewModel : ObservableObject, IDisposable
     private IEnumerable<DragItemViewModel> SelectionItems => Owner != null && !IsUngrouped
         ? Owner.TaskItemGroups.Where(group => !group.IsUngrouped && group.Name == Name).SelectMany(group => group.Items)
         : Items;
-    public bool CanSelect => CanEdit && SelectionItems.Any(item => !item.IsResourceOptionItem);
+    public bool CanSelect => Owner?.Idle == true && SelectionItems.Any(item => !item.IsResourceOptionItem);
     public bool? SelectionState
     {
         get

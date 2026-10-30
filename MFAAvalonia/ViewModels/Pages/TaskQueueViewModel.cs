@@ -442,11 +442,12 @@ public partial class TaskQueueViewModel : ViewModelBase
     [ObservableProperty] private ObservableCollection<TaskItemGroupViewModel> _taskItemGroups = [];
     [ObservableProperty] private bool _hasTaskGroups;
 
+    partial void OnTaskItemViewModelsChanging(ObservableCollection<DragItemViewModel> value) => NotifyTaskListChanging();
+
     partial void OnTaskItemViewModelsChanged(ObservableCollection<DragItemViewModel> value)
     {
         SubscribeTaskItemCollection(value);
         RebuildTaskItemGroups();
-        _redeemCodes?.UpdateTaskBadges();
         if (ConfigurationManager.IsSwitching) return;
         PersistTaskItemsInDisplayOrder();
     }
@@ -474,7 +475,6 @@ public partial class TaskQueueViewModel : ViewModelBase
     private void OnTaskItemsChangedForGrouping(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (_isApplyingGroupedTaskMove) return;
-        _redeemCodes?.UpdateTaskBadges();
         if (e.Action == NotifyCollectionChangedAction.Move && !ConfigurationManager.IsSwitching)
         {
             // Capture a flat-list reorder before rebuilding from the saved layout.
@@ -521,13 +521,21 @@ public partial class TaskQueueViewModel : ViewModelBase
 
     public void RebuildTaskItemGroups() => RebuildTaskItemGroups(synchronizeTaskOrder: true);
 
+    public event Action? TaskListChanging;
+
+    internal void NotifyTaskListChanging() => TaskListChanging?.Invoke();
+
     private void RebuildTaskItemGroups(bool synchronizeTaskOrder)
     {
+        NotifyTaskListChanging();
         _rebuildingTaskGroups = true;
         try
         {
             var tasks = TaskItemViewModels.ToList();
-            var interfaceGroups = MaaProcessor.Interface?.Group?
+            var presetKey = Processor.InstanceConfiguration.GetValue(ConfigurationKeys.InstancePresetKey, string.Empty);
+            var preset = MaaProcessor.Interface?.Preset?.FirstOrDefault(p =>
+                string.Equals(p.Name, presetKey, StringComparison.Ordinal));
+            var interfaceGroups = (preset?.Group ?? MaaProcessor.Interface?.Group)?
                 .Where(group => !string.IsNullOrWhiteSpace(group.Name))
                 .ToList() ?? [];
             var expandedStates = TaskItemGroups.GroupBy(group => group.Name, StringComparer.Ordinal)
@@ -543,7 +551,9 @@ public partial class TaskQueueViewModel : ViewModelBase
 
             var order = layout.TaskOrder.Select((id, index) => (id, index))
                 .GroupBy(entry => entry.id).ToDictionary(entries => entries.Key, entries => entries.First().index);
-            tasks = tasks.OrderBy(item => item.IsResourceOptionItem ? -1 :
+            tasks = tasks.OrderBy(item => item.IsResourceOptionItem ? -3 :
+                item.InterfaceItem?.IsStartupTask == true ? -2 :
+                item.InterfaceItem?.IsShutdownTask == true ? -1 :
                 item.InterfaceItem?.LocalId is { } id && order.TryGetValue(id, out var index) ? index : int.MaxValue).ToList();
 
             var groupsByName = new Dictionary<string, TaskItemGroupViewModel>(StringComparer.Ordinal);
@@ -563,6 +573,7 @@ public partial class TaskQueueViewModel : ViewModelBase
 
             foreach (var savedGroup in layout.Groups)
             {
+                if (layout.DeletedGroups.Contains(savedGroup.Name)) continue;
                 var saved = GetOrCreateTaskItemGroup(groupsByName, orderedGroups, savedGroup.Name, savedGroup.Label, true);
                 saved.Label = savedGroup.Label;
             }
@@ -573,7 +584,8 @@ public partial class TaskQueueViewModel : ViewModelBase
             {
                 var groupName = item.InterfaceItem?.LocalId is { } id && layout.TaskGroups.TryGetValue(id, out var customGroup)
                     ? customGroup : item.InterfaceItem?.Group?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
-                if (item.IsResourceOptionItem || (groupName != null && layout.DeletedGroups.Contains(groupName)))
+                if (item.IsResourceOptionItem || item.InterfaceItem?.IsPinnedTask == true ||
+                    (groupName != null && layout.DeletedGroups.Contains(groupName)))
                     groupName = null;
 
                 groupName = string.IsNullOrWhiteSpace(groupName) ? DefaultTaskGroupName : groupName;
@@ -581,10 +593,17 @@ public partial class TaskQueueViewModel : ViewModelBase
                     groupName = DefaultTaskGroupName;
                 var group = segments.LastOrDefault();
                 if (group == null || group.Name != groupName ||
-                    group.Items[^1].IsResourceOptionItem && !item.IsResourceOptionItem)
+                    group.Items[^1].IsResourceOptionItem && !item.IsResourceOptionItem ||
+                    group.Items[^1].InterfaceItem?.IsPinnedTask == true)
                 {
                     var definition = groupName == DefaultTaskGroupName ? null :
-                        GetOrCreateTaskItemGroup(groupsByName, orderedGroups, groupName, groupName, isExpanded: true);
+                        GetOrCreateTaskItemGroup(groupsByName, orderedGroups, groupName,
+                            ClientTaskProvider.GroupLabel(groupName), isExpanded: true);
+                    if (groupName == EndTaskPolicy.GroupName && definition is { HasDescription: false })
+                    {
+                        definition.Description = "EndTaskDescription".ToLocalization();
+                        definition.HasDescription = true;
+                    }
                     group = new TaskItemGroupViewModel
                     {
                         Name = groupName,
@@ -604,10 +623,21 @@ public partial class TaskQueueViewModel : ViewModelBase
             // Keep empty groups available for drops without displacing any tasks.
             var occupiedGroups = segments.Select(group => group.Name).ToHashSet(StringComparer.Ordinal);
             var emptyGroups = orderedGroups.Where(group => !occupiedGroups.Contains(group.Name)).ToList();
-            var emptyIndex = segments.Count > 0 && segments[^1].Name == DefaultTaskGroupName &&
-                !segments[^1].Items.All(item => item.IsResourceOptionItem)
-                ? segments.Count - 1 : segments.Count;
-            segments.InsertRange(emptyIndex, emptyGroups);
+            foreach (var empty in emptyGroups)
+            {
+                var emptyIndex = segments.Count > 0 && segments[^1].Name == DefaultTaskGroupName &&
+                    !segments[^1].Items.All(item => item.IsResourceOptionItem)
+                    ? segments.Count - 1 : segments.Count;
+                if (layout.EmptyGroupNextTasks.TryGetValue(empty.Name, out var nextId))
+                {
+                    var anchor = string.IsNullOrEmpty(nextId) ? -1 : segments.FindIndex(segment =>
+                        segment.Items.Any(item => item.InterfaceItem?.LocalId == nextId));
+                    emptyIndex = anchor < 0 ? segments.Count : anchor;
+                }
+                emptyIndex = Math.Max(emptyIndex, segments.TakeWhile(segment =>
+                    segment.Items.Any(item => item.IsResourceOptionItem || item.InterfaceItem?.IsPinnedTask == true)).Count());
+                segments.Insert(emptyIndex, empty);
+            }
             HasTaskGroups = segments.Any(group => group.Name != DefaultTaskGroupName);
             foreach (var group in segments) TaskItemGroups.Add(group);
             foreach (var group in segments)
@@ -779,27 +809,39 @@ public partial class TaskQueueViewModel : ViewModelBase
 
         if (IsRunning)
         {
-            ToastHelper.Warn(LangKeys.ConfirmExitTitle.ToLocalization());
+            ToastHelper.Warn(LangKeys.ConfirmExitTitle.ToLocalization(), instanceId: Processor.InstanceId);
             LoggerHelper.Warning(LangKeys.ConfirmExitTitle.ToLocalization());
             return;
         }
 
         if (CurrentResources.Count == 0 || string.IsNullOrWhiteSpace(CurrentResource) || CurrentResources.All(r => r.Name != CurrentResource))
         {
-            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.ResourceNotSelected.ToLocalization());
+            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.ResourceNotSelected.ToLocalization(), instanceId: Processor.InstanceId);
             LogStartBlocked("启动任务被拒绝：未选择有效资源");
             return;
         }
 
         var beforeTask = Processor.InstanceConfiguration.GetValue(ConfigurationKeys.BeforeTask, "None");
+        var selectedTasks = TaskItemViewModels.Where(task => !task.IsResourceOptionItem &&
+            (task.IsChecked || task.IsCheckedWithNull == null) && task.IsTaskSupported).ToList();
+        if (EndTaskPolicy.Conflicts(selectedTasks.Any(task => task.InterfaceItem?.HasEndActions == true),
+                Processor.InstanceConfiguration.GetValue(ConfigurationKeys.AfterTask, "None")))
+        {
+            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), "EndTaskConflict".ToLocalization(), instanceId: Processor.InstanceId);
+            LogStartBlocked("EndTaskConflict".ToLocalization());
+            return;
+        }
+        var noDeviceRequired = selectedTasks.Count > 0 && selectedTasks.All(task =>
+            task.InterfaceItem?.RequiresDevice == false);
         var skipDeviceCheck = beforeTask.Contains("StartupSoftware", StringComparison.OrdinalIgnoreCase)
-            || Instances.ConnectSettingsUserControlModel.AutoDetectOnConnectionFailed;
+            || selectedTasks.Any(task => task.InterfaceItem?.ShouldStartEmulator == true)
+            || Instances.ConnectSettingsUserControlModel.AutoDetectOnConnectionFailed || noDeviceRequired;
 
         if (!skipDeviceCheck)
         {
             if (CurrentController != MaaControllerTypes.PlayCover && CurrentDevice == null)
             {
-                ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.DeviceNotSelected.ToLocalization());
+                ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.DeviceNotSelected.ToLocalization(), instanceId: Processor.InstanceId);
                 LogStartBlocked("启动任务被拒绝：未选择连接目标");
                 return;
             }
@@ -808,16 +850,16 @@ public partial class TaskQueueViewModel : ViewModelBase
                 && CurrentDevice is AdbDeviceInfo adbInfo
                 && string.IsNullOrWhiteSpace(adbInfo.AdbSerial))
             {
-                ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.AdbAddressEmpty.ToLocalization());
+                ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.AdbAddressEmpty.ToLocalization(), instanceId: Processor.InstanceId);
                 LogStartBlocked("启动任务被拒绝：ADB 序列号为空");
                 return;
             }
         }
 
-        if (CurrentController == MaaControllerTypes.PlayCover
+        if (!noDeviceRequired && CurrentController == MaaControllerTypes.PlayCover
             && string.IsNullOrWhiteSpace(Processor.Config.PlayCover.PlayCoverAddress))
         {
-            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.PlayCoverAddressEmpty.ToLocalization());
+            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.PlayCoverAddressEmpty.ToLocalization(), instanceId: Processor.InstanceId);
             LogStartBlocked("启动任务被拒绝：PlayCover 地址为空");
             return;
         }
@@ -827,7 +869,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         foreach (var task in TaskItemViewModels)
         {
             task.HasValidationError = false;
-            if (!task.IsChecked) continue;
+            if (!task.IsChecked || task.InterfaceItem is { IsStartupTask: true, StartGame: false }) continue;
 
             var options = task.IsResourceOptionItem
                 ? task.ResourceItem?.SelectOptions
@@ -845,7 +887,7 @@ public partial class TaskQueueViewModel : ViewModelBase
 
         if (failedTasks.Count > 0)
         {
-            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), string.Join("\n", failedTasks));
+            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), string.Join("\n", failedTasks), instanceId: Processor.InstanceId);
             return;
         }
 
@@ -1002,12 +1044,28 @@ public partial class TaskQueueViewModel : ViewModelBase
         foreach (var presetTask in preset.Task.Where(t => !string.IsNullOrEmpty(t.Name)))
         {
             if (!templateDict.TryGetValue(presetTask.Name!, out var templateVm)) continue;
+            if (templateVm.InterfaceItem?.IsClientTask == true) continue;
 
             var cloned = templateVm.Clone();
             cloned.OwnerViewModel = this;
+            if (presetTask.Group != null && cloned.InterfaceItem != null)
+                cloned.InterfaceItem.Group = presetTask.Group.ToList();
             TaskItemViewModels.Add(cloned);
             presetTaskBindings.Add((presetTask, cloned));
         }
+
+        // Applying a preset explicitly restores client tasks, independently of resource declarations.
+        foreach (var clientTask in ClientTaskProvider.CreateTasks(MaaProcessor.Interface, preset))
+        {
+            var item = new DragItemViewModel(clientTask) { OwnerViewModel = this };
+            RefreshTaskSupportForCurrentContext(item);
+            TaskItemViewModels.Add(item);
+        }
+
+        var defaultOrder = TaskItemViewModels.OrderBy(item => item.IsResourceOptionItem ? -1 :
+            ClientTaskProvider.DefaultOrder(item.InterfaceItem, MaaProcessor.Interface, preset)).ToList();
+        for (var index = 0; index < defaultOrder.Count; index++)
+            TaskItemViewModels.Move(TaskItemViewModels.IndexOf(defaultOrder[index]), index);
 
         // 最后把特殊任务放到列表末尾
         foreach (var special in specialTasks)
@@ -1134,6 +1192,8 @@ public partial class TaskQueueViewModel : ViewModelBase
             Processor.InstanceConfiguration.SetValue(ConfigurationKeys.InstancePresetKey, preset.Name);
         else
             Processor.InstanceConfiguration.RemoveValue(ConfigurationKeys.InstancePresetKey);
+
+        ResetTaskGroupLayoutForPreset(specialTasks);
     }
 
     private void RefreshPresetOptionRuntimeState(MaaInterface.MaaInterfaceSelectOption option)
@@ -1264,6 +1324,7 @@ public partial class TaskQueueViewModel : ViewModelBase
     private void ResetTasks()
     {
         using var _ = BeginUiLogScope("ResetTasks");
+        Processor.InstanceConfiguration.RemoveValue(ConfigurationKeys.InstancePresetKey);
         ResetTaskGroupLayout();
         // 保留特殊任务（倒计时、系统通知等用户手动添加的自定义 Action 任务）
         var specialTasks = TaskItemViewModels
@@ -1631,7 +1692,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         }
         else if (value is DesktopWindowInfo window)
         {
-            if (!igoreToast) ToastHelper.Info(LangKeys.WindowSelectionMessage.ToLocalizationFormatted(false, ""), window.Name);
+            if (!igoreToast) ToastHelper.Info(LangKeys.WindowSelectionMessage.ToLocalizationFormatted(false, ""), window.Name, instanceId: Processor.InstanceId);
             var isSameWindow = Processor.Config.DesktopWindow.HWnd == window.Handle
                 && Processor.Config.DesktopWindow.HWnd != IntPtr.Zero;
             Processor.Config.DesktopWindow.Name = window.Name;
@@ -1645,7 +1706,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         }
         else if (value is AdbDeviceInfo device)
         {
-            if (!igoreToast) ToastHelper.Info(LangKeys.EmulatorSelectionMessage.ToLocalizationFormatted(false, ""), device.Name);
+            if (!igoreToast) ToastHelper.Info(LangKeys.EmulatorSelectionMessage.ToLocalizationFormatted(false, ""), device.Name, instanceId: Processor.InstanceId);
             // 不依赖 IsConnected（AutoDetectDevice 会提前调用 SetConnected(false)），直接比较设备信息
             var isSameDevice = !string.IsNullOrEmpty(Processor.Config.AdbDevice.AdbSerial)
                 && Processor.Config.AdbDevice.AdbSerial == device.AdbSerial
@@ -1808,7 +1869,7 @@ public partial class TaskQueueViewModel : ViewModelBase
             operation: "Reconnect", instanceId: Processor.InstanceId, instanceName: InstanceName);
         if (CurrentResources.Count == 0 || string.IsNullOrWhiteSpace(CurrentResource) || CurrentResources.All(r => r.Name != CurrentResource))
         {
-            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.ResourceNotSelected.ToLocalization());
+            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.ResourceNotSelected.ToLocalization(), instanceId: Processor.InstanceId);
             LogStartBlocked("重新连接被拒绝：未选择有效资源");
             return;
         }
@@ -1820,7 +1881,7 @@ public partial class TaskQueueViewModel : ViewModelBase
 
         if (CurrentController != MaaControllerTypes.PlayCover && CurrentDevice == null)
         {
-            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.DeviceNotSelected.ToLocalization());
+            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.DeviceNotSelected.ToLocalization(), instanceId: Processor.InstanceId);
             LogStartBlocked("重新连接被拒绝：未选择连接目标");
             return;
         }
@@ -1829,7 +1890,7 @@ public partial class TaskQueueViewModel : ViewModelBase
             && CurrentDevice is AdbDeviceInfo adbInfo
             && string.IsNullOrWhiteSpace(adbInfo.AdbSerial))
         {
-            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.AdbAddressEmpty.ToLocalization());
+            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.AdbAddressEmpty.ToLocalization(), instanceId: Processor.InstanceId);
             LogStartBlocked("重新连接被拒绝：ADB 序列号为空");
             return;
         }
@@ -1837,7 +1898,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         if (CurrentController == MaaControllerTypes.PlayCover
             && string.IsNullOrWhiteSpace(Processor.Config.PlayCover.PlayCoverAddress))
         {
-            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.PlayCoverAddressEmpty.ToLocalization());
+            ToastHelper.Warn(LangKeys.CannotStart.ToLocalization(), LangKeys.PlayCoverAddressEmpty.ToLocalization(), instanceId: Processor.InstanceId);
             LogStartBlocked("重新连接被拒绝：PlayCover 地址为空");
             return;
         }
@@ -1902,7 +1963,7 @@ public partial class TaskQueueViewModel : ViewModelBase
             operation: "RefreshDevices", instanceId: Processor.InstanceId, instanceName: InstanceName);
         if (Processor.IsConnecting)
         {
-            ToastHelper.Info(LangKeys.Tip.ToLocalization(), LangKeys.ConnectingInProgress.ToLocalization());
+            ToastHelper.Info(LangKeys.Tip.ToLocalization(), LangKeys.ConnectingInProgress.ToLocalization(), instanceId: Processor.InstanceId);
             return;
         }
 
@@ -1996,7 +2057,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         var isAdb = controllerType == MaaControllerTypes.Adb;
 
         if (showToast)
-            ToastHelper.Info(GetDetectionMessage(controllerType));
+            ToastHelper.Info(GetDetectionMessage(controllerType), instanceId: Processor.InstanceId);
         SetConnected(false);
         token.ThrowIfCancellationRequested();
         var (devices, index) = isAdb ? DetectAdbDevices(strictLaunchTarget) : DetectWin32Windows();
@@ -2402,7 +2463,7 @@ public partial class TaskQueueViewModel : ViewModelBase
             var isAdb = controllerType == MaaControllerTypes.Adb;
             ToastHelper.Info((
                 isAdb ? LangKeys.NoEmulatorFound : LangKeys.NoWindowFound).ToLocalization(), (
-                isAdb ? LangKeys.NoEmulatorFoundDetail : "").ToLocalization());
+                isAdb ? LangKeys.NoEmulatorFoundDetail : "").ToLocalization(), instanceId: Processor.InstanceId);
         }
     }
 
@@ -2426,7 +2487,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         ToastHelper.Warn(string.Format(
             LangKeys.TaskStackError.ToLocalization(),
             targetKey.ToLocalization(),
-            ex.Message));
+            ex.Message), instanceId: Processor.InstanceId);
 
         LoggerHelper.Error($"读取{targetKey.ToLocalization()}配置失败：{ex.Message}", ex);
     }
@@ -2756,6 +2817,7 @@ public partial class TaskQueueViewModel : ViewModelBase
     /// <param name="resourceName">资源包名称</param>
     public void UpdateTasksForResource(string? resourceName)
     {
+        NotifyTaskListChanging();
         // 查找当前资源
         var currentResource = CurrentResources.FirstOrDefault(r => r.Name == resourceName);
         var hasResourceOption = currentResource?.Option != null && currentResource.Option.Count > 0;

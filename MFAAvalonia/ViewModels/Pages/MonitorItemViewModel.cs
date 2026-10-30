@@ -165,7 +165,7 @@ public partial class MonitorItemViewModel : ViewModelBase
     {
         if (Image == null)
         {
-            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.ScreenshotEmpty.ToLocalization());
+            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.ScreenshotEmpty.ToLocalization(), instanceId: Processor.InstanceId);
             return;
         }
 
@@ -210,14 +210,14 @@ public partial class MonitorItemViewModel : ViewModelBase
     {
         if (Image == null)
         {
-            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.ScreenshotEmpty.ToLocalization());
+            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.ScreenshotEmpty.ToLocalization(), instanceId: Processor.InstanceId);
             return;
         }
 
         var storageProvider = Instances.StorageProvider;
         if (storageProvider == null)
         {
-            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.PlatformNotSupportedOperation.ToLocalization());
+            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.PlatformNotSupportedOperation.ToLocalization(), instanceId: Processor.InstanceId);
             return;
         }
 
@@ -245,14 +245,14 @@ public partial class MonitorItemViewModel : ViewModelBase
     {
         if (Image == null)
         {
-            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.ScreenshotEmpty.ToLocalization());
+            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.ScreenshotEmpty.ToLocalization(), instanceId: Processor.InstanceId);
             return;
         }
 
         var clipboard = Instances.Clipboard;
         if (clipboard == null)
         {
-            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.PlatformNotSupportedOperation.ToLocalization());
+            ToastHelper.Warn(LangKeys.Warning.ToLocalization(), LangKeys.PlatformNotSupportedOperation.ToLocalization(), instanceId: Processor.InstanceId);
             return;
         }
 
@@ -277,7 +277,7 @@ public partial class MonitorItemViewModel : ViewModelBase
         }
 
         await clipboard.SetDataAsync(dataTransfer);
-        ToastHelper.Info(LangKeys.CopiedToClipboard.ToLocalization());
+        ToastHelper.Info(LangKeys.CopiedToClipboard.ToLocalization(), instanceId: Processor.InstanceId);
     }
 
     [RelayCommand]

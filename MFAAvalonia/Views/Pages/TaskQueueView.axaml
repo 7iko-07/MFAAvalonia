@@ -59,7 +59,7 @@
                               IsEnabled="{Binding !IsResourceOptionItem}"
                               IsChecked="{Binding IsCheckedWithNull}" />
                     <Grid Grid.Column="1"
-                          ColumnDefinitions="Auto,*,Auto"
+                          ColumnDefinitions="Auto,*"
                           Background="Transparent"
                           MinWidth="0"
                           VerticalAlignment="Center">
@@ -74,12 +74,6 @@
                                    TextTrimming="CharacterEllipsis"
                                    TextWrapping="NoWrap"
                                    VerticalAlignment="Center" />
-                        <Border Grid.Column="2" Margin="6,0,0,0" Padding="5,2" CornerRadius="6"
-                                Background="{DynamicResource SukiCardBackground}"
-                                IsVisible="{Binding RedeemCodeBadge, Converter={x:Static avaConverters:StringConverters.IsNotNullOrEmpty}}">
-                            <TextBlock Text="{Binding RedeemCodeBadge}" FontSize="10"
-                                       Foreground="{DynamicResource SukiPrimaryColor}" />
-                        </Border>
                     </Grid>
                     <RadioButton Classes="Icon"
                                  Background="Transparent"
@@ -1259,27 +1253,15 @@
                         </Button>
                     </StackPanel>
                 </dashboard:DashboardCard.HeaderActions>
-                <Grid RowDefinitions="Auto,*">
-                    <Border Margin="0,0,0,6" Padding="10,6" CornerRadius="8"
-                            Background="{DynamicResource SukiCardBackground}"
-                            BorderBrush="{DynamicResource SukiPrimaryColor}" BorderThickness="1"
-                            IsVisible="{Binding RedeemCodes.Feed.ShowNotice}">
-                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
-                            <TextBlock Text="{Binding RedeemCodes.Notice}" TextWrapping="Wrap"
-                                       FontSize="12" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Classes="Basic" Command="{Binding RedeemCodes.OpenCommand}"
-                                    Content="{markup:I18n {x:Static helper:LangKeys.RedeemView}}" />
-                            <Button Grid.Column="2" Classes="Basic" Command="{Binding RedeemCodes.DismissCommand}"
-                                    Content="×" ToolTip.Tip="{markup:I18n {x:Static helper:LangKeys.Close}}" />
-                        </Grid>
-                    </Border>
-                    <ScrollViewer Grid.Row="1" Margin="0,3,0,0"
+                <Grid>
+                    <ScrollViewer x:Name="TaskGroupScrollViewer" Margin="0,3,0,0"
                                   MinHeight="150"
                                   HorizontalAlignment="Stretch"
                                   VerticalScrollBarVisibility="Auto"
                                   extensions:ScrollViewerExtensions.EnableEdgeFade="True"
                                   IsVisible="{Binding HasTaskGroups}">
-                        <ItemsControl ItemsSource="{Binding TaskItemGroups}">
+                        <ItemsControl x:Name="TaskGroupList" ItemsSource="{Binding TaskItemGroups}"
+                                      DragDrop.AllowDrop="True">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <StackPanel Spacing="6" />
@@ -1287,7 +1269,7 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="other:TaskItemGroupViewModel">
-                                    <Border IsVisible="{Binding ShowGroup}"
+                                    <Border Classes="TaskGroupCard" IsVisible="{Binding ShowGroup}"
                                             Background="{DynamicResource SukiCardBackground}"
                                             BorderBrush="{DynamicResource SukiBorderBrush}"
                                             BorderThickness="1"
@@ -1313,7 +1295,10 @@
                                                 <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto"
                                                       Margin="24,8,24,8" HorizontalAlignment="Stretch"
                                                       Background="Transparent"
-                                                      PointerPressed="TaskGroupHeader_OnPointerPressed">
+                                                      PointerPressed="TaskGroupHeader_OnPointerPressed"
+                                                      PointerMoved="TaskGroupHeader_OnPointerMoved"
+                                                      PointerReleased="TaskGroupHeader_OnPointerReleased"
+                                                      PointerCaptureLost="TaskGroupHeader_OnPointerCaptureLost">
                                                     <CheckBox Grid.Column="0" IsThreeState="True" MinWidth="0"
                                                               Margin="0,0,8,0" HorizontalAlignment="Center"
                                                               VerticalAlignment="Center" IsEnabled="{Binding CanSelect}"
@@ -1378,7 +1363,7 @@
                         </ItemsControl>
                     </ScrollViewer>
 
-                    <ListBox Grid.Row="1" Classes="Fluent"
+                    <ListBox Classes="Fluent"
                              DragDrop.AllowDrop="{Binding Idle,Source={x:Static helper:Instances.RootViewModel}}"
                              extensions:DragDropExtensions.EnableDragDrop="True"
                              extensions:DragDropExtensions.DragStartThreshold="2"

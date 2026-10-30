@@ -15,9 +15,19 @@
             <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6">
                 <Button Classes="Basic" Command="{Binding RefreshCommand}" IsEnabled="{Binding !Feed.IsLoading}"
                         Content="{markup:I18n {x:Static helper:LangKeys.RedeemRefresh}}" />
-                <Button Classes="Flat" Command="{Binding RedeemAllCommand}"
+                <Button Classes="Basic" Command="{Binding RedeemAllCommand}"
                         Content="{markup:I18n {x:Static helper:LangKeys.RedeemAll}}" />
             </StackPanel>
+        </Grid>
+        <Grid ColumnDefinitions="Auto,*,Auto" Margin="10,6,10,6">
+            <TextBlock Text="{markup:I18n {x:Static helper:LangKeys.RedeemNotifyNewCodes}}"
+                       Margin="10,0,5,0" FontSize="14" TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource SukiLowText}" VerticalAlignment="Center" />
+            <ToggleSwitch Grid.Column="2" Classes="Switch"
+                          IsChecked="{Binding Feed.NotificationsEnabled, Mode=TwoWay}"
+                          MaxHeight="60" MaxWidth="100" Margin="0,4,0,4"
+                          HorizontalAlignment="Right" VerticalAlignment="Center"
+                          ToolTip.Tip="{markup:I18n {x:Static helper:LangKeys.RedeemNotifyNewCodes}}" />
         </Grid>
         <TextBlock Text="{markup:I18n {x:Static helper:LangKeys.RedeemBusy}}" TextWrapping="Wrap"
                    IsVisible="{Binding IsTaskRunning}" Foreground="{DynamicResource SukiLowText}" FontSize="12" />
@@ -37,7 +47,7 @@
                                     CommandParameter="{Binding}" Content="{markup:I18n {x:Static helper:LangKeys.RedeemOne}}" />
                             <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Expiry}" FontSize="12"
                                        Foreground="{DynamicResource SukiLowText}" TextWrapping="Wrap" />
-                            <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding Result}" FontSize="12" TextWrapping="Wrap"
+                            <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding ResultText}" FontSize="12" TextWrapping="Wrap"
                                        Classes.success="{Binding Succeeded}">
                                 <TextBlock.Styles>
                                     <Style Selector="TextBlock.success">

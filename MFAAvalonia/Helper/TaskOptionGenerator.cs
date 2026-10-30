@@ -1,5 +1,6 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Notifications;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
@@ -25,6 +26,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using Lang.Avalonia.MarkupExtensions;
 using SukiUI.Extensions;
+using SukiUI.Dialogs;
 using Action = System.Action;
 
 namespace MFAAvalonia.Helper;
@@ -34,6 +36,22 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
     
     public void GeneratePanelContent(StackPanel panel, DragItemViewModel dragItem)
     {
+        if (dragItem.InterfaceItem?.IsShutdownTask == true)
+        {
+            AddCombinedShutdownOptions(panel, dragItem);
+            return;
+        }
+        if (dragItem.InterfaceItem?.IsStartupTask == true)
+        {
+            AddCombinedStartupOptions(panel, dragItem);
+            return;
+        }
+        if (dragItem.InterfaceItem?.IsStartTask == true)
+        {
+            AddStartupOptions(panel);
+            return;
+        }
+
         // 检测是否为特殊任务，如果是则生成特殊任务选项面板
         var entry = dragItem.InterfaceItem?.Entry;
         if (!string.IsNullOrEmpty(entry) && AddTaskDialogViewModel.SpecialActionNames.Contains(entry))
@@ -63,6 +81,22 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
 
     public void GenerateCommonPanelContent(StackPanel panel, DragItemViewModel dragItem)
     {
+        if (dragItem.InterfaceItem?.IsShutdownTask == true)
+        {
+            AddCombinedShutdownOptions(panel, dragItem);
+            return;
+        }
+        if (dragItem.InterfaceItem?.IsStartupTask == true)
+        {
+            AddCombinedStartupOptions(panel, dragItem);
+            return;
+        }
+        if (dragItem.InterfaceItem?.IsStartTask == true)
+        {
+            AddStartupOptions(panel);
+            return;
+        }
+
         // 检测是否为特殊任务，如果是则生成特殊任务选项面板
         var entry = dragItem.InterfaceItem?.Entry;
         if (!string.IsNullOrEmpty(entry) && AddTaskDialogViewModel.SpecialActionNames.Contains(entry))
@@ -126,6 +160,145 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
                 continue;
 
             AddOption(panel, selectOption, dragItem);
+        }
+    }
+
+    private void AddCombinedStartupOptions(StackPanel panel, DragItemViewModel source)
+    {
+        var task = source.InterfaceItem!;
+        AddSwitch("StartEmulatorTask", task.StartEmulator, value => task.StartEmulator = value,
+            AddStartupOptions, useI18n: true);
+        AddSwitch(task.Name!, task.StartGame, value => task.StartGame = value, container =>
+        {
+            foreach (var option in task.Option ?? []) AddOption(container, option, source);
+        });
+
+        void AddSwitch(string label, bool enabled, Action<bool> update, Action<StackPanel> populate,
+            bool useI18n = false)
+        {
+            var toggle = AddTaskSwitch(panel, label, enabled, update, useI18n);
+
+            var options = new StackPanel();
+            var border = new Border
+            {
+                IsVisible = enabled,
+                BorderThickness = new Thickness(2, 0, 0, 0),
+                Margin = new Thickness(24, 0, 0, 4),
+                Padding = new Thickness(8, 0, 0, 0),
+                Child = options,
+            };
+            border.Bind(Border.BorderBrushProperty, new DynamicResourceExtension("SukiPrimaryColor"));
+            if (enabled) populate(options);
+            panel.Children.Add(border);
+            toggle.IsCheckedChanged += (_, _) =>
+            {
+                var value = toggle.IsChecked == true;
+                if (value && options.Children.Count == 0) populate(options);
+                border.IsVisible = value;
+            };
+        }
+    }
+
+    private void AddCombinedShutdownOptions(StackPanel panel, DragItemViewModel source)
+    {
+        var task = source.InterfaceItem!;
+        AddTaskSwitch(panel, task.Name!, task.CloseGame, value => task.CloseGame = value);
+        AddTaskSwitch(panel, LangKeys.CloseEmulator, task.CloseEmulator, value => task.CloseEmulator = value, useI18n: true);
+        AddTaskSwitch(panel, LangKeys.CloseMFA, task.CloseApplication, value => task.CloseApplication = value, useI18n: true);
+    }
+
+    private ToggleSwitch AddTaskSwitch(StackPanel panel, string label, bool enabled, Action<bool> update,
+        bool useI18n = false)
+    {
+        var grid = CreateBaseGrid();
+        var labelPanel = CreateLabelPanel(label, null, null, useI18n: useI18n);
+        var toggle = new ToggleSwitch
+        {
+            IsChecked = enabled,
+            Classes = { "Switch" },
+            MaxHeight = 60,
+            MaxWidth = 100,
+            Margin = new Thickness(0, 4, 0, 4),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        BindIdleEnabled(toggle);
+        Grid.SetColumn(toggle, 1);
+        grid.Children.Add(labelPanel);
+        grid.Children.Add(toggle);
+        panel.Children.Add(grid);
+        toggle.IsCheckedChanged += (_, _) =>
+        {
+            update(toggle.IsChecked == true);
+            saveConfigurationAction();
+        };
+        return toggle;
+    }
+
+    private void AddStartupOptions(StackPanel panel)
+    {
+        var settings = Instances.StartSettingsUserControlModel;
+        var pathBox = new TextBox();
+        pathBox.Bind(TextBox.TextProperty, new Binding(nameof(settings.SoftwarePath)) { Source = settings, Mode = BindingMode.TwoWay });
+        pathBox.InnerRightContent = new Button
+        {
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Height = 20,
+            Width = 30,
+            Padding = new Thickness(-4, 0, 0, 0),
+            Command = settings.SelectSoftCommand,
+            Content = new FluentIcons.Avalonia.Fluent.FluentIcon
+            {
+                Icon = FluentIcons.Common.Icon.FolderArrowLeft,
+                IconSize = FluentIcons.Common.IconSize.Size16,
+            },
+        };
+        MFAAvalonia.Extensions.DragDropExtensions.SetEnableFileDragDrop(pathBox, true);
+        var argumentsBox = new TextBox();
+        argumentsBox.Bind(TextBox.TextProperty, new Binding(nameof(settings.EmulatorConfig)) { Source = settings, Mode = BindingMode.TwoWay });
+        var waitInput = new NumericUpDown();
+        waitInput.Bind(NumericUpDown.ValueProperty, new Binding(nameof(settings.WaitSoftwareTime)) { Source = settings, Mode = BindingMode.TwoWay });
+
+        var fields = new (string Label, Control Input)[]
+        {
+            (LangKeys.SoftwarePath, pathBox),
+            (LangKeys.StartupParameter, argumentsBox),
+            (LangKeys.WaitSoftware, waitInput),
+        };
+        foreach (var (key, input) in fields)
+        {
+            var grid = CreateSpecialTaskGrid(isFirstRow: key == LangKeys.SoftwarePath);
+            var description = key == LangKeys.WaitSoftware ? LangKeys.WaitSoftwareDescription.ToLocalization() : null;
+            var label = CreateLabelPanel(key, null, description, useI18n: true);
+            label.Margin = new Thickness(10, 0, 5, 0);
+            input.MinWidth = 120;
+            input.Margin = new Thickness(0, 2, 0, 2);
+            input.VerticalAlignment = VerticalAlignment.Center;
+            input.Bind(TemplatedControl.BorderBrushProperty, new DynamicResourceExtension("SukiControlBorderBrush"));
+            BindIdleEnabled(input);
+            Grid.SetColumn(input, 1);
+            AddResponsiveBehavior(grid, label, input);
+            grid.Children.Add(label);
+            grid.Children.Add(input);
+            panel.Children.Add(grid);
+
+            if (key == LangKeys.StartupParameter && viewModel.CurrentController == MaaControllerTypes.Adb)
+            {
+                var text = CreateLabelText(LangKeys.EmulatorMultiInstanceQuickSettings);
+                text.Bind(TextBlock.ForegroundProperty, new DynamicResourceExtension("SukiPrimaryColor"));
+                var button = new Button
+                {
+                    Command = settings.QuickSettingsCommand,
+                    Content = text,
+                    BorderThickness = new Thickness(0),
+                    BorderBrush = Brushes.Transparent,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Margin = new Thickness(10, 0, 10, 3),
+                };
+                BindIdleEnabled(button);
+                panel.Children.Add(button);
+            }
         }
     }
 
@@ -653,12 +826,89 @@ public class TaskOptionGenerator(TaskQueueViewModel viewModel, Action saveConfig
             }
         }
 
+        var synchronizing = false;
+        var confirmationPending = false;
+        ISukiDialog? confirmationDialog = null;
+
+        void SynchronizeSwitch()
+        {
+            synchronizing = true;
+            try
+            {
+                toggleSwitch.IsChecked = option.Index == yesValue;
+            }
+            finally
+            {
+                synchronizing = false;
+            }
+        }
+
+        void CommitSelection(bool enabled)
+        {
+            option.Index = enabled ? yesValue : noValue;
+            SynchronizeSwitch();
+            UpdateSubOptions(option.Index.Value);
+            saveConfigurationAction();
+        }
+
+        void EndConfirmation()
+        {
+            confirmationPending = false;
+            confirmationDialog = null;
+            wrapper.IsEnabled = true;
+            SynchronizeSwitch();
+        }
+
         toggleSwitch.IsCheckedChanged += (_, _) =>
         {
-            option.Index = toggleSwitch.IsChecked == true ? yesValue : noValue;
-            UpdateSubOptions(option.Index ?? 0);
-            saveConfigurationAction();
+            if (synchronizing || confirmationPending) return;
+
+            var enabled = toggleSwitch.IsChecked == true;
+            if (!enabled || option.Index == yesValue || string.IsNullOrWhiteSpace(interfaceOption.ConfirmOnEnable))
+            {
+                CommitSelection(enabled);
+                return;
+            }
+
+            // 确认前只恢复显示，不写入配置，也不激活开启分支的子选项。
+            SynchronizeSwitch();
+            confirmationPending = true;
+            wrapper.IsEnabled = false;
+            try
+            {
+                var dialog = Instances.DialogManager.CreateDialog()
+                    .OfType(NotificationType.Warning)
+                    .WithTitle(LangKeys.TaskOptionEnableConfirmationTitle.ToLocalization())
+                    .WithContent(new TextBlock
+                    {
+                        Text = LanguageHelper.GetLocalizedString(interfaceOption.ConfirmOnEnable),
+                        Foreground = Brushes.Red,
+                        FontSize = 20,
+                        FontWeight = FontWeight.Bold,
+                        TextWrapping = TextWrapping.Wrap,
+                        MaxWidth = 520
+                    })
+                    .WithActionButton(LangKeys.ButtonCancel.ToLocalization(), _ => { }, true, "Outline")
+                    .WithActionButton(LangKeys.TaskOptionConfirmEnable.ToLocalization(), _ =>
+                    {
+                        if (confirmationPending && viewModel.Idle && Instances.RootViewModel.Idle)
+                            CommitSelection(true);
+                    }, true)
+                    .Dismiss().ByClickingBackground()
+                    .OnDismissed(_ => EndConfirmation());
+
+                confirmationDialog = dialog.Dialog;
+                if (!dialog.TryShow()) EndConfirmation();
+            }
+            catch (Exception ex)
+            {
+                EndConfirmation();
+                LoggerHelper.Error($"显示选项开启确认失败：{option.Name}", ex);
+            }
         };
+
+        // 选项面板被移除后，旧弹窗不能再开启该选项。
+        toggleSwitch.DetachedFromVisualTree += (_, _) => confirmationDialog?.Dismiss();
 
         // Initialize sub-options
         UpdateSubOptions(option.Index ?? 0);

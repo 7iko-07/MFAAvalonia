@@ -2100,6 +2100,7 @@
   <data name="TaskGroupStart" xml:space="preserve"><value>啟動此組已勾選的任務</value></data>
   <data name="TaskGroupDelete" xml:space="preserve"><value>刪除分組，保留並平鋪任務</value></data>
   <data name="TaskGroupToggle" xml:space="preserve"><value>展開或摺疊分組</value></data>
+  <data name="TaskGroupDrag" xml:space="preserve"><value>長按並拖曳以移動整個分組</value></data>
   <data name="TaskGroupSelect" xml:space="preserve"><value>全選或取消全選組內任務</value></data>
   <data name="TaskMoveToTop" xml:space="preserve"><value>置頂</value></data>
   <data name="TaskMoveToBottom" xml:space="preserve"><value>置底</value></data>
@@ -2127,14 +2128,17 @@
   <data name="RedeemNewNotice" xml:space="preserve">
     <value>發現 {0} 個新兌換碼</value>
   </data>
-  <data name="RedeemNewBadge" xml:space="preserve">
-    <value>新 {0}</value>
+  <data name="RedeemNotifyNewCodes" xml:space="preserve">
+    <value>有新兌換碼時通知</value>
   </data>
   <data name="RedeemExpires" xml:space="preserve">
     <value>{0} 到期</value>
   </data>
   <data name="RedeemExpiryUnknown" xml:space="preserve">
     <value>有效期未註明</value>
+  </data>
+  <data name="RedeemNotRedeemed" xml:space="preserve">
+    <value>尚未兌換</value>
   </data>
   <data name="RedeemRunning" xml:space="preserve">
     <value>兌換中…</value>
@@ -2151,6 +2155,27 @@
   <data name="AgentDependencyRepairStopped" xml:space="preserve">
     <value>已嘗試自動修復，相依套件仍異常。請查看更新錯誤，並在設定中重新下載完整資源包；不會重複自動修復。</value>
   </data>
+  <data name="TaskOptionEnableConfirmationTitle" xml:space="preserve">
+    <value>開啟前確認</value>
+  </data>
+  <data name="TaskOptionConfirmEnable" xml:space="preserve">
+    <value>確認開啟</value>
+  </data>
+  <data name="EndTaskGroup" xml:space="preserve"><value>結束後執行</value></data>
+  <data name="EndTaskDescription" xml:space="preserve"><value>任務結束後執行關閉；失敗時依「出錯後繼續執行」設定處理，手動停止時不執行。不能與設定中的「結束後操作」同時啟用。</value></data>
+  <data name="EndTaskConflict" xml:space="preserve"><value>結束後任務與設定中的「結束後操作」同時啟用。請取消其中一邊後再啟動。</value></data>
+  <data name="EndTaskWaiting" xml:space="preserve"><value>一般任務已結束，正在等待相關設定結束並執行關閉任務。</value></data>
+  <data name="EndTaskExecuting" xml:space="preserve"><value>結束後執行：{0}</value></data>
+  <data name="EndTaskCancelled" xml:space="preserve"><value>相關設定不符合結束後執行條件，已取消後續關閉動作並保留現場。請檢查日誌。</value></data>
+  <data name="EndTaskFailed" xml:space="preserve"><value>關閉動作失敗或無法確認目標，已停止後續關閉動作。請檢查日誌。</value></data>
+  <data name="EndTaskExitCancelled" xml:space="preserve"><value>有設定不符合收尾條件或被手動停止，已取消自動關閉本程式。</value></data>
+  <data name="EndTaskBusy" xml:space="preserve"><value>目前分頁仍在執行，或目標裝置／本程式正在關閉，暫時不能啟動新任務。</value></data>
+  <data name="EndTaskInvalid" xml:space="preserve"><value>結束後任務設定無效或不支援目前控制器，請檢查日誌與任務設定。</value></data>
+  <data name="StartEmulatorFailed" xml:space="preserve"><value>啟動模擬器失敗：{0}</value></data>
+  <data name="StartEmulatorPathInvalid" xml:space="preserve"><value>請在設定中填寫有效的遊戲路徑。</value></data>
+  <data name="StartEmulatorConnectionFailed" xml:space="preserve"><value>無法連線模擬器，請檢查附加命令、連線設定或增加等待時間。</value></data>
+  <data name="StartEmulatorTask" xml:space="preserve"><value>啟動模擬器</value></data>
+  <data name="StartTaskGroup" xml:space="preserve"><value>啟動前執行</value></data>
 </root>
 
 
