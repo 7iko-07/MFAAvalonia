@@ -545,11 +545,17 @@ public static class AgentHelper
     /// </summary>
     public static void KillAllAgents(List<AgentContext> contexts, MaaTasker? taskerToDispose = null)
     {
-        foreach (var ctx in contexts)
+        AgentContext[] agents;
+        lock (contexts)
+        {
+            // 先移交清理所有权，再释放资源；重复清理不会遍历同一批 Agent。
+            agents = contexts.ToArray();
+            contexts.Clear();
+        }
+        foreach (var ctx in agents)
         {
             KillSingleAgent(ctx, taskerToDispose);
         }
-        contexts.Clear();
 
         // 只在最后处理一次 tasker
         if (taskerToDispose != null)

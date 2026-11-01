@@ -3754,122 +3754,119 @@ public partial class MaaProcessor
         EnqueueCommand(() => StopInternal(status, finished, onlyStart, action));
     }
 
-    private Task StopInternal(MFATask.MFATaskStatus status, bool finished, bool onlyStart, Action? action)
+    private async Task StopInternal(MFATask.MFATaskStatus status, bool finished, bool onlyStart, Action? action)
     {
         var endingRun = _endTaskRun;
         if (!finished) EndTasks.Cancel(endingRun);
         using var logScope = BeginInstanceLogScope("StopTask", "Worker");
-        ResetActionFailedCount();
-        ClearTaskbarProgress();
-        _taskQueueTotal = 0;
-
         lock (_stopLock)
         {
             LoggerHelper.Info("停止前状态：" + Status);
             if (Status == MFATask.MFATaskStatus.STOPPING)
-                return Task.CompletedTask;
+                return;
             Status = MFATask.MFATaskStatus.STOPPING;
+        }
+
+        var settledSuccessfully = false;
+        try
+        {
+            ResetActionFailedCount();
+            ClearTaskbarProgress();
+            _taskQueueTotal = 0;
             ViewModel?.SetAdbRecoverySelectionLock(false);
             DispatcherHelper.PostOnMainThread(() =>
             {
                 if (ViewModel != null) ViewModel.ToggleEnable = false;
             });
-            try
+
+            var isUpdateRelated = TaskQueue.Any(task => task.IsUpdateRelated);
+            ViewModel?.SetCurrentTaskName(string.Empty);
+            if (!ShouldProcessStop(finished))
             {
-                var isUpdateRelated = TaskQueue.Any(task => task.IsUpdateRelated);
-                ViewModel?.SetCurrentTaskName(string.Empty);
-                if (!ShouldProcessStop(finished))
+                if (status == MFATask.MFATaskStatus.STOPPED)
+                {
+                    StopAgents();
+                }
+
+                ToastHelper.Warn(LangKeys.NoTaskToStop.ToLocalization(), instanceId: InstanceId);
+
+                TaskQueue.Clear();
+                return;
+            }
+
+            var agentProcessesKilled = status == MFATask.MFATaskStatus.STOPPED
+                && _agentContexts.Count > 0;
+            if (agentProcessesKilled)
+            {
+                AgentHelper.KillAgentProcesses(_agentContexts);
+                _agentStarted = false;
+            }
+
+            CancelOperations();
+
+            TaskQueue.Clear();
+
+            // 命令队列等待整个停止过程，避免取消回调再次清理同一批 Agent。
+            await ExecuteStopCore(finished, async () =>
+            {
+                var stopResult = MaaJobStatus.Succeeded;
+
+                try
+                {
+                    if (MaaTasker is { IsRunning: true, IsStopping: false } && status != MFATask.MFATaskStatus.FAILED && status != MFATask.MFATaskStatus.SUCCEEDED)
+                    {
+
+                        // 持续尝试停止直到返回 Succeeded
+                        const int maxRetries = 10;
+                        const int retryDelayMs = 500;
+
+                        for (int i = 0; i < maxRetries; i++)
+                        {
+                            LoggerHelper.Info($"正在尝试停止任务执行器，第 {i + 1} 次。");
+                            stopResult = AbortCurrentTasker(waitForCompletion: !agentProcessesKilled);
+                            LoggerHelper.Info($"第 {i + 1} 次停止任务执行器返回：{stopResult}，准备重试。");
+
+                            if (stopResult == MaaJobStatus.Succeeded)
+                                break;
+
+                            await Task.Delay(retryDelayMs);
+                        }
+                    }
+                }
+                finally
                 {
                     if (status == MFATask.MFATaskStatus.STOPPED)
                     {
                         StopAgents();
+                        MaaTasker = null;
                     }
-
-                    ToastHelper.Warn(LangKeys.NoTaskToStop.ToLocalization(), instanceId: InstanceId);
-
-                    TaskQueue.Clear();
-                    EndTasks.Settle(endingRun, false);
-                    return Task.CompletedTask;
                 }
 
-                var agentProcessesKilled = status == MFATask.MFATaskStatus.STOPPED
-                    && _agentContexts.Count > 0;
-                if (agentProcessesKilled)
-                {
-                    AgentHelper.KillAgentProcesses(_agentContexts);
-                    _agentStarted = false;
-                }
-
-                CancelOperations();
-
-                TaskQueue.Clear();
-
-                ExecuteStopCore(finished, async () =>
-                {
-                    var stopResult = MaaJobStatus.Succeeded;
-
-                    try
-                    {
-                        if (MaaTasker is { IsRunning: true, IsStopping: false } && status != MFATask.MFATaskStatus.FAILED && status != MFATask.MFATaskStatus.SUCCEEDED)
-                        {
-
-                            // 持续尝试停止直到返回 Succeeded
-                            const int maxRetries = 10;
-                            const int retryDelayMs = 500;
-
-                            for (int i = 0; i < maxRetries; i++)
-                            {
-                                LoggerHelper.Info($"正在尝试停止任务执行器，第 {i + 1} 次。");
-                                stopResult = AbortCurrentTasker(waitForCompletion: !agentProcessesKilled);
-                                LoggerHelper.Info($"第 {i + 1} 次停止任务执行器返回：{stopResult}，准备重试。");
-
-                                if (stopResult == MaaJobStatus.Succeeded)
-                                    break;
-
-                                await Task.Delay(retryDelayMs);
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        if (status == MFATask.MFATaskStatus.STOPPED)
-                        {
-                            StopAgents();
-                            MaaTasker = null;
-                        }
-                    }
-
-                    HandleStopResult(status, stopResult, onlyStart, action, isUpdateRelated);
-                    DispatcherHelper.PostOnMainThread(() =>
-                    {
-                        if (ViewModel != null)
-                        {
-                            ViewModel.IsRunning = false;
-                            ViewModel.ToggleEnable = true;
-                        }
-                        EndTasks.Settle(endingRun,
-                            (status is MFATask.MFATaskStatus.SUCCEEDED or MFATask.MFATaskStatus.FAILED) &&
-                            stopResult == MaaJobStatus.Succeeded);
-                        Instances.RootViewModel.IsRunning = Processors.Any(processor => processor.ViewModel?.IsRunning == true);
-                    });
-                });
-            }
-            catch (Exception ex)
-            {
-                DispatcherHelper.PostOnMainThread(() =>
-                {
-                    if (ViewModel != null)
-                    {
-                        ViewModel.IsRunning = false;
-                        ViewModel.ToggleEnable = true;
-                    }
-                });
-                HandleStopException(ex);
-                EndTasks.Settle(endingRun, false);
-            }
+                HandleStopResult(status, stopResult, onlyStart, action, isUpdateRelated);
+                settledSuccessfully =
+                    (status is MFATask.MFATaskStatus.SUCCEEDED or MFATask.MFATaskStatus.FAILED) &&
+                    stopResult == MaaJobStatus.Succeeded;
+            });
         }
-
-        return Task.CompletedTask;
+        catch (Exception ex)
+        {
+            HandleStopException(ex);
+        }
+        finally
+        {
+            DispatcherHelper.PostOnMainThread(() =>
+            {
+                if (ViewModel != null)
+                {
+                    ViewModel.IsRunning = false;
+                    ViewModel.ToggleEnable = true;
+                }
+                EndTasks.Settle(endingRun, settledSuccessfully);
+                Instances.RootViewModel.IsRunning = Processors.Any(processor => processor.ViewModel?.IsRunning == true);
+                Instances.RootViewModel.Idle =
+                    Instances.InstanceTabBarViewModel.ActiveTab?.TaskQueueViewModel.Idle ?? true;
+            });
+        }
     }
 
 
@@ -3898,17 +3895,14 @@ public partial class MaaProcessor
             || finished;
     }
 
-    private void ExecuteStopCore(bool finished, Action stopAction)
+    private Task ExecuteStopCore(bool finished, Func<Task> stopAction)
     {
-        TaskManager.RunTaskAsync(() =>
+        return TaskManager.RunTaskAsync(async () =>
         {
             if (!finished) DispatcherHelper.PostOnMainThread(() => AddLogByKey(LangKeys.Stopping, (IBrush?)null));
 
-            stopAction.Invoke();
-
-            DispatcherHelper.PostOnMainThread(() => Instances.RootViewModel.Idle =
-                Instances.InstanceTabBarViewModel.ActiveTab?.TaskQueueViewModel.Idle ?? true);
-        }, null, "停止maafw任务");
+            await stopAction();
+        }, name: "停止maafw任务", catchException: false);
     }
 
     private MaaJobStatus AbortCurrentTasker(bool waitForCompletion = true)
@@ -4105,7 +4099,7 @@ public partial class MaaProcessor
 
     private void HandleStopException(Exception ex)
     {
-        LoggerHelper.Error($"停止操作失败：{ex.Message}");
+        LoggerHelper.Error($"停止操作失败：{ex.Message}", ex);
         ToastHelper.Error(LangKeys.StoppingFailed.ToLocalization(), instanceId: InstanceId);
     }
 
