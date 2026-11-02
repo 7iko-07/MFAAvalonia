@@ -201,76 +201,6 @@ public partial class TaskQueueView : UserControl
 
     #region UI
 
-    private void SelectingItemsControl_OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (sender is ListBox { SelectedItem: DragItemViewModel itemViewModel })
-        {
-            if (!itemViewModel.IsTaskSupported)
-            {
-                itemViewModel.EnableSetting = false;
-                Dispatcher.UIThread.Post(ClearUnsupportedSelection, DispatcherPriority.Background);
-                return;
-            }
-
-            itemViewModel.EnableSetting = true;
-        }
-    }
-
-    private void ClearUnsupportedSelection()
-    {
-        UpdateTaskItemContainerVisibility();
-
-        // The refresh restores the original selection after all items are loaded.
-        if (_taskListViewport != null) return;
-
-        if (DataContext is not TaskQueueViewModel vm || TaskListBox == null)
-        {
-            return;
-        }
-
-        if (TaskListBox.SelectedItem is not DragItemViewModel selectedItem)
-        {
-            var initialItem = vm.TaskItemViewModels.FirstOrDefault(item => item.EnableSetting && (item.IsResourceOptionItem || item.IsTaskSupported))
-                ?? vm.TaskItemViewModels.FirstOrDefault(item => item.IsTaskSupported);
-            if (initialItem != null)
-            {
-                TaskListBox.SelectedItem = initialItem;
-                initialItem.EnableSetting = true;
-            }
-            return;
-        }
-
-        if (selectedItem.IsTaskSupported)
-        {
-            return;
-        }
-
-        selectedItem.EnableSetting = false;
-
-        var fallbackItem = vm.TaskItemViewModels
-            .FirstOrDefault(item => item.IsTaskSupported);
-
-        TaskListBox.SelectedItem = fallbackItem;
-
-        if (fallbackItem != null)
-        {
-            fallbackItem.EnableSetting = true;
-        }
-    }
-
-    private void UpdateTaskItemContainerVisibility()
-    {
-        if (TaskListBox == null)
-        {
-            return;
-        }
-
-        foreach (var container in TaskListBox.GetVisualDescendants().OfType<ListBoxItem>())
-        {
-            container.IsVisible = container.DataContext is not DragItemViewModel item || item.IsTaskSupported;
-        }
-    }
-
     private void TaskListBox_OnKeyDown(object? sender, KeyEventArgs e)
     {
         if (sender is not ListBox listBox)
@@ -630,31 +560,6 @@ public partial class TaskQueueView : UserControl
         {
             SelectTaskForSettings(item, sender as Control);
         }
-    }
-
-    private void SelectTaskForSettings(DragItemViewModel item, Control? source)
-    {
-        if (!item.IsTaskSupported)
-        {
-            item.EnableSetting = false;
-            return;
-        }
-
-        if (DataContext is TaskQueueViewModel vm)
-        {
-            foreach (var task in vm.TaskItemViewModels.Where(task => !ReferenceEquals(task, item) && task.EnableSetting))
-            {
-                task.EnableSetting = false;
-            }
-        }
-
-        item.EnableSetting = true;
-
-        var owningListBox = source as ListBox ?? source?
-            .GetVisualAncestors()
-            .OfType<ListBox>()
-            .FirstOrDefault();
-        (owningListBox ?? TaskListBox)?.SetCurrentValue(SelectingItemsControl.SelectedItemProperty, item);
     }
 
     private static void ApplyTaskMenuEnabledStates(ContextMenu menu, DragItemViewModel? currentItem)

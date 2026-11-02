@@ -15,7 +15,7 @@ using MFAAvalonia.Helper.ValueType;
 using MFAAvalonia.ViewModels.Pages;
 using MFAAvalonia.Views.Pages;
 
-internal static class Program
+internal static partial class Program
 {
     private static readonly string Build = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../bin/AnyCPU/Debug"));
     [ModuleInitializer]
@@ -41,6 +41,7 @@ internal static class Program
 
     private static void Run()
     {
+        CheckTaskSelections();
         foreach (var grouped in new[] { false, true })
         foreach (var scenario in new[] { "visible-selection", "offscreen-selection", "no-selection", "replacement-items", "deleted-selection", "coalesced-refresh" })
         {
@@ -137,6 +138,7 @@ namespace MFAAvalonia.Views.Pages
                 ItemsSource = tasks,
                 Template = new FuncControlTemplate<ListBox>((_, _) => grouped ? rows : Scroll)
             };
+            ConnectSelection(ActiveList);
             if (grouped)
             {
                 TaskGroupList = new ItemsControl { Template = new FuncControlTemplate<ItemsControl>((_, _) => ActiveList) };
@@ -147,11 +149,9 @@ namespace MFAAvalonia.Views.Pages
             else Child = TaskListBox = ActiveList;
         }
 
-        private void SelectTaskForSettings(DragItemViewModel item, Control? source)
-        {
-            item.EnableSetting = true;
-            ((ListBox)source!).SelectedItem = item;
-        }
+        internal void ConnectSelection(ListBox list) => list.SelectionChanged += SelectingItemsControl_OnSelectionChanged;
+        internal void Select(DragItemViewModel item, Control? source) => SelectTaskForSettings(item, source);
+        internal void CleanupSelection() => ClearUnsupportedSelection();
     }
 }
 

@@ -10,5 +10,6 @@
     <Reference Include="Avalonia.Controls"><HintPath>$(AppBuildDir)/Avalonia.Controls.dll</HintPath></Reference>
     <Reference Include="CommunityToolkit.Mvvm"><HintPath>$(AppBuildDir)/CommunityToolkit.Mvvm.dll</HintPath></Reference>
     <Compile Include="../../MFAAvalonia/Views/Pages/TaskQueueView.ScrollPosition.cs" Link="TaskQueueView.ScrollPosition.cs" />
+    <Compile Include="../../MFAAvalonia/Views/Pages/TaskQueueView.Selection.cs" Link="TaskQueueView.Selection.cs" />
   </ItemGroup>
 </Project>
