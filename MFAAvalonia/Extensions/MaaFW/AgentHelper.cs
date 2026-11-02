@@ -93,7 +93,7 @@ public static class AgentHelper
                 cancellationToken: token), token);
         }
         catch (OperationCanceledException) { throw; }
-        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException
+        catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException
             or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
         {
             LoggerHelper.Error($"Agent 依赖检查失败：{ex.Message}", ex);
