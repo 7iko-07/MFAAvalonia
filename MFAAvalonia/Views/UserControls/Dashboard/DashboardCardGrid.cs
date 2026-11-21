@@ -59,6 +59,15 @@ public sealed class DashboardCardGrid : Panel
         set => SetValue(RowsProperty, value);
     }
 
+    public static readonly StyledProperty<string?> RowHeightsProperty =
+        AvaloniaProperty.Register<DashboardCardGrid, string?>(nameof(RowHeights));
+
+    public string? RowHeights
+    {
+        get => GetValue(RowHeightsProperty);
+        set => SetValue(RowHeightsProperty, value);
+    }
+
     public static readonly StyledProperty<double> CellSpacingProperty =
         AvaloniaProperty.Register<DashboardCardGrid, double>(nameof(CellSpacing), 10);
 
@@ -118,6 +127,7 @@ public sealed class DashboardCardGrid : Panel
     private Thumb? _activeRowSplitterThumb;
     private bool _isSplitterDragging;
     private bool _isRowSplitterDragging;
+    private double _rowSplitterDragDistance;
 
     public DashboardCardGrid()
     {
@@ -158,7 +168,7 @@ public sealed class DashboardCardGrid : Panel
             InvalidateArrange();
         }
 
-        if (change.Property == RowsProperty)
+        if (change.Property == RowsProperty || change.Property == RowHeightsProperty)
         {
             _activeRowSplitterContext = null;
             EnsureRowSplitters();
@@ -394,7 +404,7 @@ public sealed class DashboardCardGrid : Panel
         var deltaY = currentPosition.Y - _dragStartPosition.Y;
 
         var deltaCol = (int)Math.Round(deltaX / metrics.CellPitchX);
-        var deltaRow = (int)Math.Round(deltaY / metrics.CellPitchY);
+        var deltaRow = metrics.RowMetrics.FindRow(metrics.RowMetrics.Offset(_dragStartRow) + deltaY) - _dragStartRow;
 
         var targetCol = Math.Clamp(_dragStartCol + deltaCol, 0, Columns - 1);
         var targetRow = Math.Clamp(_dragStartRow + deltaRow, 0, Rows - 1);
@@ -580,9 +590,9 @@ public sealed class DashboardCardGrid : Panel
         h = Math.Max(0, h);
 
         newCol = (int)Math.Round((x - Padding.Left) / metrics.CellPitchX);
-        newRow = (int)Math.Round((y - Padding.Top) / metrics.CellPitchY);
+        newRow = metrics.RowMetrics.FindRow(y - Padding.Top);
         newColSpan = (int)Math.Round((w + CellSpacing) / metrics.CellPitchX);
-        newRowSpan = (int)Math.Round((h + CellSpacing) / metrics.CellPitchY);
+        newRowSpan = metrics.RowMetrics.FindRow(y - Padding.Top + h + CellSpacing) - newRow;
 
         newColSpan = Math.Max(1, newColSpan);
         newRowSpan = Math.Max(1, newRowSpan);
@@ -605,9 +615,9 @@ public sealed class DashboardCardGrid : Panel
     {
         var metrics = GetMetrics(Bounds.Size);
         var x = Padding.Left + col * metrics.CellPitchX;
-        var y = Padding.Top + row * metrics.CellPitchY;
+        var y = Padding.Top + metrics.RowMetrics.Offset(row);
         var w = colSpan * metrics.CellWidth + (colSpan - 1) * CellSpacing;
-        var h = rowSpan * metrics.CellHeight + (rowSpan - 1) * CellSpacing;
+        var h = metrics.RowMetrics.Height(row, rowSpan);
         return new Rect(x, y, Math.Max(0, w), Math.Max(0, h));
     }
 
@@ -934,6 +944,9 @@ public sealed class DashboardCardGrid : Panel
 
         [JsonProperty("spacing")]
         public double Spacing { get; set; }
+
+        [JsonProperty("row_heights")]
+        public string? RowHeights { get; set; }
     }
 
     private DashboardGridMeta? LoadLayoutMeta()
@@ -960,7 +973,8 @@ public sealed class DashboardCardGrid : Panel
         {
             Rows = Rows,
             Columns = Columns,
-            Spacing = CellSpacing
+            Spacing = CellSpacing,
+            RowHeights = RowHeights
         };
 
         ConfigurationManager.Current.SetValue(key, meta);
@@ -970,9 +984,11 @@ public sealed class DashboardCardGrid : Panel
     {
         if (meta == null)
         {
+            RowHeights = null;
             return;
         }
 
+        RowHeights = meta.RowHeights;
         if (meta.Columns > 0)
         {
             Columns = meta.Columns;
@@ -1002,6 +1018,7 @@ public sealed class DashboardCardGrid : Panel
         public int Rows { get; init; }
         public int Columns { get; init; }
         public double Spacing { get; init; }
+        public string? RowHeights { get; init; }
         public Dictionary<string, LayoutCell> Cards { get; init; } = new();
     }
 
@@ -1023,6 +1040,9 @@ public sealed class DashboardCardGrid : Panel
             var rows = root["rows"]?.Value<int>() ?? 0;
             var columns = root["columns"]?.Value<int>() ?? 0;
             var spacing = root["spacing"]?.Value<double>() ?? 0;
+            var rowHeights = root["row_heights"]?.Value<string>();
+            if (!string.IsNullOrWhiteSpace(rowHeights))
+                RowDefinitions.Parse(rowHeights);
 
             var cards = new Dictionary<string, LayoutCell>(StringComparer.OrdinalIgnoreCase);
             foreach (var property in root.Properties())
@@ -1062,6 +1082,7 @@ public sealed class DashboardCardGrid : Panel
                 Rows = rows > 0 ? rows : Rows,
                 Columns = columns > 0 ? columns : Columns,
                 Spacing = spacing > 0 ? spacing : CellSpacing,
+                RowHeights = rowHeights,
                 Cards = cards
             };
         }
@@ -1079,6 +1100,7 @@ public sealed class DashboardCardGrid : Panel
         Columns = layout.Columns > 0 ? layout.Columns : Columns;
         Rows = layout.Rows > 0 ? layout.Rows : Rows;
         CellSpacing = layout.Spacing > 0 ? layout.Spacing : CellSpacing;
+        RowHeights = layout.RowHeights;
 
         ApplyLayouts(defaults);
 
@@ -1205,6 +1227,9 @@ public sealed class DashboardCardGrid : Panel
             ["spacing"] = CellSpacing
         };
 
+        if (!string.IsNullOrWhiteSpace(RowHeights))
+            obj["row_heights"] = RowHeights;
+
         foreach (var layout in defaults)
         {
             if (string.IsNullOrWhiteSpace(layout.Id))
@@ -1281,11 +1306,12 @@ public sealed class DashboardCardGrid : Panel
 
                 var colSpan = Math.Max(1, card.GridColumnSpan);
                 var rowSpan = Math.Max(1, card.IsCollapsed ? 1 : card.GridRowSpan);
+                var row = ClampIndex(card.GridRow, rows);
                 colSpan = Math.Clamp(colSpan, 1, columns);
-                rowSpan = Math.Clamp(rowSpan, 1, rows);
+                rowSpan = Math.Clamp(rowSpan, 1, rows - row);
 
                 var w = colSpan * metrics.CellWidth + (colSpan - 1) * CellSpacing;
-                var h = rowSpan * metrics.CellHeight + (rowSpan - 1) * CellSpacing;
+                var h = metrics.RowMetrics.Height(row, rowSpan);
 
                 c.Measure(new Size(Math.Max(0, w), Math.Max(0, h)));
                 continue;
@@ -1360,10 +1386,10 @@ public sealed class DashboardCardGrid : Panel
             rowSpan = Math.Clamp(rowSpan, 1, rows - row);
 
             var x = Padding.Left + col * metrics.CellPitchX;
-            var y = Padding.Top + row * metrics.CellPitchY;
+            var y = Padding.Top + metrics.RowMetrics.Offset(row);
 
             var w = colSpan * metrics.CellWidth + (colSpan - 1) * CellSpacing;
-            var h = rowSpan * metrics.CellHeight + (rowSpan - 1) * CellSpacing;
+            var h = metrics.RowMetrics.Height(row, rowSpan);
 
             card.GridColumn = col;
             card.GridRow = row;
@@ -1386,7 +1412,7 @@ public sealed class DashboardCardGrid : Panel
         return finalSize;
     }
 
-    private (double CellWidth, double CellHeight, double CellPitchX, double CellPitchY) GetMetrics(Size size)
+    private (double CellWidth, double CellHeight, double CellPitchX, double CellPitchY, DashboardRowMetrics RowMetrics) GetMetrics(Size size)
     {
         var columns = Math.Max(1, Columns);
         var rows = Math.Max(1, Rows);
@@ -1397,7 +1423,7 @@ public sealed class DashboardCardGrid : Panel
         var w = Math.Max(0, innerW - (columns - 1) * CellSpacing) / columns;
         var h = Math.Max(0, innerH - (rows - 1) * CellSpacing) / rows;
 
-        return (w, h, w + CellSpacing, h + CellSpacing);
+        return (w, h, w + CellSpacing, h + CellSpacing, new DashboardRowMetrics(rows, innerH, CellSpacing, RowHeights));
     }
     private static int ClampIndex(int index, int count)
     {
@@ -1683,10 +1709,10 @@ public sealed class DashboardCardGrid : Panel
         rowSpan = Math.Clamp(rowSpan, 1, rows - row);
 
         var x = Padding.Left + col * metrics.CellPitchX;
-        var y = Padding.Top + row * metrics.CellPitchY;
+        var y = Padding.Top + metrics.RowMetrics.Offset(row);
 
         var w = colSpan * metrics.CellWidth + (colSpan - 1) * CellSpacing;
-        var h = rowSpan * metrics.CellHeight + (rowSpan - 1) * CellSpacing;
+        var h = metrics.RowMetrics.Height(row, rowSpan);
 
         _dragPreviewRect = new Rect(x, y, Math.Max(0, w), Math.Max(0, h));
         EnsureDragPreviewResources();
@@ -2161,7 +2187,7 @@ public sealed class DashboardCardGrid : Panel
             return;
         }
 
-        var height = rows * metrics.CellHeight + (rows - 1) * CellSpacing;
+        var height = metrics.RowMetrics.Height(0, rows);
         var top = Padding.Top;
 
         for (var i = 0; i < _columnSplitters.Count; i++)
@@ -2222,8 +2248,8 @@ public sealed class DashboardCardGrid : Panel
 
             if (leftMin != int.MaxValue && leftMin == rightMin && leftMax == rightMax && rightMax > rightMin)
             {
-                var y = Padding.Top + leftMin * metrics.CellPitchY;
-                var h = (leftMax - leftMin) * metrics.CellHeight + (leftMax - leftMin - 1) * CellSpacing;
+                var y = Padding.Top + metrics.RowMetrics.Offset(leftMin);
+                var h = metrics.RowMetrics.Height(leftMin, leftMax - leftMin);
                 splitter.Arrange(new Rect(x, y, width, Math.Max(0, h)));
             }
             else
@@ -2280,7 +2306,7 @@ public sealed class DashboardCardGrid : Panel
                 ? _activeRowSplitterContext?.LastDelta ?? 0
                 : 0;
             var boundary = Math.Clamp(layout.Boundary + boundaryOffset, 0, Math.Max(0, Rows - 2));
-            var centerY = Padding.Top + (boundary + 1) * metrics.CellPitchY - CellSpacing * 0.5;
+            var centerY = Padding.Top + metrics.RowMetrics.Offset(boundary + 1) - CellSpacing * 0.5;
             var height = Math.Max(12, CellSpacing);
             var y = centerY - height / 2;
 
@@ -2327,6 +2353,7 @@ public sealed class DashboardCardGrid : Panel
         splitter.Opacity = 1;
         _activeRowSplitterContext = RowSplitterDragContext.FromLayout(layout, Rows);
         _activeRowSplitterContext.LastDelta = 0;
+        _rowSplitterDragDistance = 0;
     }
 
     private void OnSplitterDragDelta(object? sender, VectorEventArgs e)
@@ -2371,8 +2398,9 @@ public sealed class DashboardCardGrid : Panel
             return;
         }
 
-        var rawDelta = (int)Math.Round(e.Vector.Y / metrics.CellPitchY);
-        var totalDelta = _activeRowSplitterContext.LastDelta + rawDelta;
+        _rowSplitterDragDistance += e.Vector.Y;
+        var startRow = _activeRowSplitterContext.Boundary + 1;
+        var totalDelta = metrics.RowMetrics.FindRow(metrics.RowMetrics.Offset(startRow) + _rowSplitterDragDistance) - startRow;
         var clamped = _activeRowSplitterContext.ClampDelta(totalDelta);
 
         if (clamped == _activeRowSplitterContext.LastDelta)

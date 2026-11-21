@@ -13,6 +13,7 @@ using MFAAvalonia.Helper.ValueType;
 using MFAAvalonia.ViewModels.Windows;
 using SukiUI.Controls;
 using SukiUI.Dialogs;
+using SukiUI.Extensions;
 using SukiUI.MessageBox;
 using System;
 using System.IO;
@@ -24,10 +25,20 @@ namespace MFAAvalonia.Views.Windows;
 
 public partial class RootView : SukiWindow
 {
+    private const double DefaultWindowAspectRatio = 1.385;
+
     public RootView()
     {
         // 添加初始化标志
         _isInitializing = true;
+
+        if (this.GetHostScreen() is { } screen)
+        {
+            Height = Math.Min(screen.WorkingArea.Height, screen.WorkingArea.Width / DefaultWindowAspectRatio)
+                / screen.Scaling * 0.95;
+            Width = Height * DefaultWindowAspectRatio;
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        }
 
         // 先从配置中加载窗口大小和位置，在窗口显示前设置
         LoadWindowSizeAndPosition();

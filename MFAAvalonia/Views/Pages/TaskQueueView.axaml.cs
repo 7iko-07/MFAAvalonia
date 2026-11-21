@@ -618,8 +618,8 @@ public partial class TaskQueueView : UserControl
         {
             return;
         }
-        TaskListCard.GridRowSpan = 8;
-        TaskListCard.ExpandedRowSpan = 8;
+        TaskListCard.GridRowSpan = TaskQueueDashboardGrid.Rows;
+        TaskListCard.ExpandedRowSpan = TaskQueueDashboardGrid.Rows;
     }
 
     /// <summary>
@@ -632,8 +632,8 @@ public partial class TaskQueueView : UserControl
         {
             return;
         }
-        TaskListCard.GridRowSpan = 8;
-        TaskListCard.ExpandedRowSpan = 8;
+        TaskListCard.GridRowSpan = TaskQueueDashboardGrid.Rows;
+        TaskListCard.ExpandedRowSpan = TaskQueueDashboardGrid.Rows;
     }
 
     /// <summary>

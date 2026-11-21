@@ -91,14 +91,6 @@ public partial class RootViewContent : UserControl
 
     #region Control Finders
 
-    private Control? FindTaskListHeaderButton(int index)
-    {
-        var panel = FindDescendantByName<StackPanel>(this, "TaskListHeaderButtons");
-        if (panel == null) return null;
-        var buttons = panel.Children.OfType<Button>().ToList();
-        return index < buttons.Count ? buttons[index] : null;
-    }
-
     private Control? FindLogExportButton()
     {
         var logCard = FindDescendantByName<Control>(this, "LogCard");
@@ -241,24 +233,23 @@ public partial class RootViewContent : UserControl
                 PreferredPlacement = TipPlacement.Top
             });
 
-            // Step 7: SelectAll / DeselectAll buttons
+            // Step 7: Select all / deselect all
             steps.Add(new TutorialStep
             {
                 TitleKey = LangKeys.TutorialStepSelectAllTitle,
                 DescriptionKey = LangKeys.TutorialStepSelectAllDesc,
-                FindTarget = () => FindTaskListHeaderButton(0),
+                FindTarget = () => FindDescendantByName<Button>(root, "TaskListSelectAllButton"),
                 PreferredPlacement = TipPlacement.Bottom,
-                CutoutPadding = new Thickness(4, 4, 50, 4) // extend right to cover DeselectAll
+                CutoutPadding = new Thickness(4, 4, 36, 4)
             });
 
-            // Step 8: AddTask / Reset buttons
+            // Step 8: Add task button
             steps.Add(new TutorialStep
             {
                 TitleKey = LangKeys.TutorialStepAddTaskBtnTitle,
                 DescriptionKey = LangKeys.TutorialStepAddTaskBtnDesc,
-                FindTarget = () => FindTaskListHeaderButton(2),
-                PreferredPlacement = TipPlacement.Bottom,
-                CutoutPadding = new Thickness(4, 4, 50, 4) // extend right to cover Reset
+                FindTarget = () => FindDescendantByName<Button>(root, "TaskListAddTaskButton"),
+                PreferredPlacement = TipPlacement.Bottom
             });
 
             // Step 9: Start task button

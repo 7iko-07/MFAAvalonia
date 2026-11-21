@@ -1838,13 +1838,13 @@ Please do not copy only the main executable by itself.</value>
         <value>Select All / Deselect All</value>
     </data>
     <data name="TutorialStepSelectAllDesc" xml:space="preserve">
-        <value>These two buttons quickly check or uncheck all tasks. The left one is "Select All" and the right one is "Deselect All".</value>
+        <value>Choose Select All in the task list header to check tasks, or choose Deselect All beside it to clear the selection.</value>
     </data>
     <data name="TutorialStepAddTaskBtnTitle" xml:space="preserve">
-        <value>Add &amp; Reset Tasks</value>
+        <value>Add Tasks</value>
     </data>
     <data name="TutorialStepAddTaskBtnDesc" xml:space="preserve">
-        <value>The "Add Task" button adds new tasks to the list; the "Reset Tasks" button restores the task list to its default state.</value>
+        <value>Choose Add Task to add a new task to the list.</value>
     </data>
     <data name="TutorialStepResetTaskTitle" xml:space="preserve">
         <value>Start Tasks</value>
@@ -2110,7 +2110,9 @@ Please do not copy only the main executable by itself.</value>
   <data name="TaskGroupNew" xml:space="preserve"><value>New group</value></data>
   <data name="TaskGroupRename" xml:space="preserve"><value>Edit group name; press Enter to save</value></data>
   <data name="TaskGroupStart" xml:space="preserve"><value>Run checked tasks in this group</value></data>
-  <data name="TaskGroupDelete" xml:space="preserve"><value>Delete group and keep tasks ungrouped</value></data>
+  <data name="TaskGroupDelete" xml:space="preserve"><value>Ungroup tasks</value></data>
+  <data name="TaskMoreActions" xml:space="preserve"><value>More actions</value></data>
+  <data name="TaskListReset" xml:space="preserve"><value>Reset task list</value></data>
   <data name="TaskGroupToggle" xml:space="preserve"><value>Expand or collapse group</value></data>
   <data name="TaskGroupDrag" xml:space="preserve"><value>Hold and drag to move the entire group</value></data>
   <data name="TaskGroupSelect" xml:space="preserve"><value>Select or deselect all tasks in this group</value></data>

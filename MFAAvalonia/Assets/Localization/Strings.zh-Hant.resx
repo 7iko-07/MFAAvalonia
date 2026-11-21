@@ -1838,13 +1838,13 @@
         <value>全選與全不選</value>
     </data>
     <data name="TutorialStepSelectAllDesc" xml:space="preserve">
-        <value>這兩個按鈕可以快速勾選或取消勾選所有任務。左側為「全選」，右側為「全不選」。</value>
+        <value>點擊標題列的「全選」批次勾選任務，或點擊旁邊的「全不選」取消勾選。</value>
     </data>
     <data name="TutorialStepAddTaskBtnTitle" xml:space="preserve">
-        <value>新增與重置任務</value>
+        <value>新增任務</value>
     </data>
     <data name="TutorialStepAddTaskBtnDesc" xml:space="preserve">
-        <value>「新增任務」按鈕可以將新任務加入列表；「重置任務」按鈕可以將任務列表恢復為預設狀態。</value>
+        <value>點擊「新增任務」將新任務加入列表。</value>
     </data>
     <data name="TutorialStepResetTaskTitle" xml:space="preserve">
         <value>開始任務</value>
@@ -2098,7 +2098,9 @@
   <data name="TaskGroupNew" xml:space="preserve"><value>新增分組</value></data>
   <data name="TaskGroupRename" xml:space="preserve"><value>編輯分組名稱，按 Enter 儲存</value></data>
   <data name="TaskGroupStart" xml:space="preserve"><value>啟動此組已勾選的任務</value></data>
-  <data name="TaskGroupDelete" xml:space="preserve"><value>刪除分組，保留並平鋪任務</value></data>
+  <data name="TaskGroupDelete" xml:space="preserve"><value>解散分組</value></data>
+  <data name="TaskMoreActions" xml:space="preserve"><value>更多操作</value></data>
+  <data name="TaskListReset" xml:space="preserve"><value>重置任務列表</value></data>
   <data name="TaskGroupToggle" xml:space="preserve"><value>展開或摺疊分組</value></data>
   <data name="TaskGroupDrag" xml:space="preserve"><value>長按並拖曳以移動整個分組</value></data>
   <data name="TaskGroupSelect" xml:space="preserve"><value>全選或取消全選組內任務</value></data>

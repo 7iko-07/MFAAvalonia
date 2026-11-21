@@ -532,9 +532,7 @@ public partial class TaskQueueViewModel : ViewModelBase
         try
         {
             var tasks = TaskItemViewModels.ToList();
-            var presetKey = Processor.InstanceConfiguration.GetValue(ConfigurationKeys.InstancePresetKey, string.Empty);
-            var preset = MaaProcessor.Interface?.Preset?.FirstOrDefault(p =>
-                string.Equals(p.Name, presetKey, StringComparison.Ordinal));
+            var preset = GetInstancePreset();
             var interfaceGroups = (preset?.Group ?? MaaProcessor.Interface?.Group)?
                 .Where(group => !string.IsNullOrWhiteSpace(group.Name))
                 .ToList() ?? [];
@@ -999,17 +997,29 @@ public partial class TaskQueueViewModel : ViewModelBase
         RebuildTaskItemGroups();
     }
 
+    private MaaInterface.MaaInterfacePreset? GetInstancePreset()
+    {
+        var presetKey = Processor.InstanceConfiguration.GetValue(ConfigurationKeys.InstancePresetKey, string.Empty);
+        return string.IsNullOrWhiteSpace(presetKey) ? null : MaaProcessor.Interface?.Preset?.FirstOrDefault(preset =>
+            string.Equals(preset.Name, presetKey, StringComparison.Ordinal));
+    }
+
     [RelayCommand]
     private void ApplyPreset(MaaInterface.MaaInterfacePreset preset)
     {
-        if (preset?.Task == null) return;
+        if (preset?.Task is not { } presetTasks) return;
         using var _ = BeginUiLogScope("ApplyPreset");
         LoggerHelper.UserAction("应用预设",
-            $"preset={preset.DisplayName ?? preset.Name}, taskCount={preset.Task.Count}",
+            $"preset={preset.DisplayName ?? preset.Name}, taskCount={presetTasks.Count}",
             operation: "ApplyPreset",
             instanceId: Processor.InstanceId,
             instanceName: InstanceName);
+        RestorePresetTasks(preset, presetTasks);
+    }
 
+    private void RestorePresetTasks(MaaInterface.MaaInterfacePreset preset,
+        IReadOnlyList<MaaInterface.MaaInterfacePresetTask> presetTasks)
+    {
         // 1. 根据预设中的任务列表重建任务顺序与数量：
         //    - 只保留预设中出现的任务（例如：默认 ABCD，预设只有 AB，则应用后只显示 AB 两个任务）
         //    - 保留全局资源设置项（IsResourceOptionItem）
@@ -1041,7 +1051,7 @@ public partial class TaskQueueViewModel : ViewModelBase
             TaskItemViewModels.Add(item);
 
         // 再按预设顺序添加任务项，并记录“预设项 -> 新克隆任务项”的一一映射
-        foreach (var presetTask in preset.Task.Where(t => !string.IsNullOrEmpty(t.Name)))
+        foreach (var presetTask in presetTasks.Where(t => !string.IsNullOrEmpty(t.Name)))
         {
             if (!templateDict.TryGetValue(presetTask.Name!, out var templateVm)) continue;
             if (templateVm.InterfaceItem?.IsClientTask == true) continue;
@@ -1324,6 +1334,14 @@ public partial class TaskQueueViewModel : ViewModelBase
     private void ResetTasks()
     {
         using var _ = BeginUiLogScope("ResetTasks");
+        if (GetInstancePreset() is { Task: { } presetTasks } preset)
+        {
+            RestorePresetTasks(preset, presetTasks);
+            LoggerHelper.UserAction("重置任务列表", $"preset={preset.Name}, taskCount={TaskItemViewModels.Count}",
+                operation: "ResetTasks", instanceId: Processor.InstanceId, instanceName: InstanceName);
+            return;
+        }
+
         Processor.InstanceConfiguration.RemoveValue(ConfigurationKeys.InstancePresetKey);
         ResetTaskGroupLayout();
         // 保留特殊任务（倒计时、系统通知等用户手动添加的自定义 Action 任务）

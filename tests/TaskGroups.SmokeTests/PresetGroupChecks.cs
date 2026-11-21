@@ -85,6 +85,16 @@ internal static partial class Program
             Check(ResourceGroups(queue)
                 .SequenceEqual(new[] { "custom" }) && ResourceItems(queue).Count() == 2,
                 "switching to an empty group list removes prior preset groups and keeps special tasks");
+            ResourceItems(queue).First().IsChecked = false;
+            queue.TaskItemViewModels.Add(new DragItemViewModel(definition.Task![0]) { OwnerViewModel = queue });
+            queue.ResetTasksCommand.Execute(null);
+            Dispatcher.UIThread.RunJobs();
+            var resetConfig = new InstanceConfiguration(id);
+            Check(resetConfig.GetValue(ConfigurationKeys.InstancePresetKey, string.Empty) == "quick" &&
+                ResourceItems(queue).Select(task => task.InterfaceItem!.Name).SequenceEqual(new[] { "shop", "repeatable" }) &&
+                ResourceItems(queue).First().IsChecked &&
+                ResourceGroups(queue).SequenceEqual(new[] { "custom" }),
+                "reset restores the bound preset's tasks, checks and groups, retains special tasks and persists the binding");
             queue.ApplyPresetCommand.Execute(definition.Preset[2]);
             Dispatcher.UIThread.RunJobs();
             Check(queue.TaskItemGroups.Any(group => group.Name == "daily") &&
@@ -107,6 +117,13 @@ internal static partial class Program
                     .SequenceEqual(preset.Task!.Select(task => task.Name)), $"{preset.Name}: exact task order and membership");
                 Check(projectQueue.TaskItemGroups.Where(group => !group.IsUngrouped).Select(group => group.Name)
                     .SequenceEqual(preset.Group!.Select(group => group.Name)), $"{preset.Name}: exact preset group list");
+                projectQueue.ResetTasksCommand.Execute(null);
+                Dispatcher.UIThread.RunJobs();
+                Check(ResourceItems(projectQueue).Select(task => task.InterfaceItem!.Name)
+                    .SequenceEqual(preset.Task!.Select(task => task.Name)) &&
+                    projectQueue.TaskItemGroups.Where(group => !group.IsUngrouped).Select(group => group.Name)
+                        .SequenceEqual(preset.Group!.Select(group => group.Name)),
+                    $"{preset.Name}: reset restores the authored task and group lists");
                 Check(projectQueue.TaskItemGroups.Where(group => !group.IsUngrouped).All(group => group.Items.Count > 1),
                     $"{preset.Name}: singleton tasks and omitted groups have no group header");
                 var startTasks = projectQueue.TaskItemGroups.First().Items;

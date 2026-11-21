@@ -2007,13 +2007,13 @@
         <value>すべて選択/すべて選択解除</value>
     </data>
   <data name="TutorialStepSelectAllDesc" xml:space="preserve">
-        <value>これら 2 つのボタンは、すべてのタスクをすばやくオンまたはオフにします。左が「すべて選択」、右が「すべて選択解除」です。</value>
+        <value>タスクリストのヘッダーで「すべて選択」か、隣の「すべて選択解除」を選びます。</value>
     </data>
   <data name="TutorialStepAddTaskBtnTitle" xml:space="preserve">
-        <value>タスクの追加とリセット</value>
+        <value>タスクの追加</value>
     </data>
   <data name="TutorialStepAddTaskBtnDesc" xml:space="preserve">
-        <value>[タスクの追加] ボタンをクリックすると、新しいタスクがリストに追加されます。 [タスクをリセット] ボタンをクリックすると、タスク リストがデフォルトの状態に戻ります。</value>
+        <value>「タスクを追加」を選ぶと、新しいタスクをリストに追加できます。</value>
     </data>
   <data name="TutorialStepResetTaskTitle" xml:space="preserve">
         <value>Start Tasks</value>
@@ -2105,7 +2105,9 @@
   <data name="TaskGroupNew" xml:space="preserve"><value>新しいグループ</value></data>
   <data name="TaskGroupRename" xml:space="preserve"><value>グループ名を編集し、Enter で保存</value></data>
   <data name="TaskGroupStart" xml:space="preserve"><value>グループ内の選択済みタスクを実行</value></data>
-  <data name="TaskGroupDelete" xml:space="preserve"><value>グループを削除し、タスクをグループ外に保持</value></data>
+  <data name="TaskGroupDelete" xml:space="preserve"><value>グループを解除</value></data>
+  <data name="TaskMoreActions" xml:space="preserve"><value>その他の操作</value></data>
+  <data name="TaskListReset" xml:space="preserve"><value>タスクリストをリセット</value></data>
   <data name="TaskGroupToggle" xml:space="preserve"><value>グループを展開・折りたたむ</value></data>
   <data name="TaskGroupDrag" xml:space="preserve"><value>長押ししてドラッグするとグループ全体を移動できます</value></data>
   <data name="TaskGroupSelect" xml:space="preserve"><value>グループ内のタスクをすべて選択・解除</value></data>

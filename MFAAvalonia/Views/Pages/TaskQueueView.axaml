@@ -1063,15 +1063,16 @@
                                      GridId="TaskQueueView"
                                      Columns="12"
                                      Rows="8"
+                                     RowHeights="49,49,*,*,*,*,90,90"
                                      CellSpacing="10">
             <dashboard:DashboardCard x:Name="SettingCard"
                                      CardId="settings"
-                                     GridColumn="4"
-                                     GridRow="0"
-                                     GridColumnSpan="4"
-                                     GridRowSpan="5"
-                                     ExpandedColumnSpan="4"
-                                     ExpandedRowSpan="5">
+                                     GridColumn="3"
+                                     GridRow="2"
+                                     GridColumnSpan="6"
+                                     GridRowSpan="4"
+                                     ExpandedColumnSpan="6"
+                                     ExpandedRowSpan="4">
                 <dashboard:DashboardCard.TitleContent>
                     <TextBlock FontSize="11"
                                FontWeight="Bold"
@@ -1127,9 +1128,9 @@
                                      CardId="task_list"
                                      GridColumn="0"
                                      GridRow="0"
-                                     GridColumnSpan="4"
+                                     GridColumnSpan="3"
                                      GridRowSpan="8"
-                                     ExpandedColumnSpan="4"
+                                     ExpandedColumnSpan="3"
                                      ExpandedRowSpan="8">
                 <dashboard:DashboardCard.TitleContent>
                     <TextBlock FontSize="11"
@@ -1145,68 +1146,54 @@
                                 Margin="2,0,2,0"
                                 Orientation="Horizontal"
                                 VerticalAlignment="Center"
-                                Spacing="8">
-                        <Button Classes="BasicTight" Command="{Binding AddTaskGroupCommand}"
-                                IsEnabled="{Binding Idle}"
-                                ToolTip.Tip="{markup:I18n TaskGroupNew}">
-                            <avalonia1:FluentIcon Icon="AddSquare" IconSize="Size16" IconVariant="Regular" />
-                        </Button>
-                        <Button Classes="BasicTight TaskQueueBasicTight"
-                                ClipToBounds="False"
-                                Command="{Binding SelectAllCommand}"
-                                Height="16"
-                                IsEnabled="{Binding CurrentInstanceIdle, Source={x:Static helper:Instances.RootViewModel}}"
-                                Margin="7,0,0,0"
-                                Padding="0"
-                                ToolTip.Tip="{markup:I18n {x:Static helper:LangKeys.SelectAll}}"
-                                Width="16">
-                            <avalonia1:FluentIcon Icon="SelectAllOn" IconSize="Size16" IconVariant="Regular" />
-                        </Button>
-                        <Button Classes="BasicTight TaskQueueBasicTight"
-                                ClipToBounds="False"
-                                Command="{Binding SelectNoneCommand}"
-                                Height="16"
-                                IsEnabled="{Binding CurrentInstanceIdle, Source={x:Static helper:Instances.RootViewModel}}"
-                                Margin="7,0,0,0"
-                                Padding="0"
-                                ToolTip.Tip="{markup:I18n {x:Static helper:LangKeys.DeselectAll}}"
-                                Width="16">
-                            <avalonia1:FluentIcon Icon="SelectAllOff" IconSize="Size16" IconVariant="Regular" />
-                        </Button>
-                        <Button Classes="BasicTight TaskQueueBasicTight"
-                                ClipToBounds="False"
+                                Spacing="4">
+                        <StackPanel.Styles>
+                            <Style Selector="Button.BasicTight">
+                                <Setter Property="MinWidth" Value="28" />
+                                <Setter Property="Height" Value="28" />
+                                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                <Setter Property="VerticalContentAlignment" Value="Center" />
+                            </Style>
+                        </StackPanel.Styles>
+                        <Button x:Name="TaskListAddTaskButton" Classes="BasicTight"
                                 Command="{Binding AddTaskCommand}"
-                                Height="16"
                                 IsEnabled="{Binding CurrentInstanceIdle, Source={x:Static helper:Instances.RootViewModel}}"
-                                Margin="7,0,0,0"
-                                Padding="0"
+                                AutomationProperties.Name="{markup:I18n {x:Static helper:LangKeys.AddTask}}"
                                 ToolTip.Tip="{markup:I18n {x:Static helper:LangKeys.AddTask}}">
                             <avalonia1:FluentIcon Icon="AddSquareMultiple" IconSize="Size16" IconVariant="Regular" />
                         </Button>
-                        <Button Classes="BasicTight TaskQueueBasicTight SyncButton"
-                                Command="{Binding ResetTasksCommand}"
+                        <Button x:Name="TaskListSelectAllButton" Classes="BasicTight"
+                                Command="{Binding SelectAllCommand}"
                                 IsEnabled="{Binding CurrentInstanceIdle, Source={x:Static helper:Instances.RootViewModel}}"
-                                Margin="2,0,2,0"
-                                Padding="0"
-                                Width="24"
-                                Height="24"
-                                HorizontalContentAlignment="Center"
-                                VerticalContentAlignment="Center"
-                                ToolTip.Tip="{markup:I18n {x:Static helper:LangKeys.Reset}}">
-                            <Path Data="{StaticResource RefreshGeometry}"
-                                  Width="16"
-                                  Height="16"
-                                  Stretch="Uniform"
-                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                                AutomationProperties.Name="{markup:I18n {x:Static helper:LangKeys.SelectAll}}"
+                                ToolTip.Tip="{markup:I18n {x:Static helper:LangKeys.SelectAll}}">
+                            <avalonia1:FluentIcon Icon="SelectAllOn" IconSize="Size16" IconVariant="Regular" />
+                        </Button>
+                        <Button Classes="BasicTight"
+                                Command="{Binding SelectNoneCommand}"
+                                IsEnabled="{Binding CurrentInstanceIdle, Source={x:Static helper:Instances.RootViewModel}}"
+                                AutomationProperties.Name="{markup:I18n {x:Static helper:LangKeys.DeselectAll}}"
+                                ToolTip.Tip="{markup:I18n {x:Static helper:LangKeys.DeselectAll}}">
+                            <avalonia1:FluentIcon Icon="SelectAllOff" IconSize="Size16" IconVariant="Regular" />
+                        </Button>
+                        <Button Classes="BasicTight"
+                                AutomationProperties.Name="{markup:I18n TaskMoreActions}"
+                                ToolTip.Tip="{markup:I18n TaskMoreActions}">
+                            <avalonia1:FluentIcon Icon="MoreHorizontal" IconSize="Size16" IconVariant="Regular" />
+                            <Button.Flyout>
+                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                    <MenuItem Header="{markup:I18n TaskGroupNew}" Command="{Binding AddTaskGroupCommand}"
+                                              IsEnabled="{Binding Idle}" />
+                                    <Separator />
+                                    <MenuItem Header="{markup:I18n TaskListReset}" Command="{Binding ResetTasksCommand}"
+                                              IsEnabled="{Binding CurrentInstanceIdle, Source={x:Static helper:Instances.RootViewModel}}" />
+                                </MenuFlyout>
+                            </Button.Flyout>
                         </Button>
                         <Button Classes="BasicTight PlayStopButton"
                                 IsEnabled="{Binding ToggleEnable}"
                                 Command="{Binding ToggleCommand}"
                                 FontWeight="DemiBold"
-                                Height="28"
-                                Width="28"
-                                Padding="0"
-                                Margin="0,0,7,0"
                                 Cursor="Hand"
                                 Background="Transparent"
                                 BorderThickness="0"
@@ -1229,10 +1216,6 @@
                                 IsEnabled="{Binding ToggleEnable}"
                                 Command="{Binding ToggleCommand}"
                                 FontWeight="DemiBold"
-                                Height="28"
-                                Width="28"
-                                Padding="0"
-                                Margin="0,0,7,0"
                                 Cursor="Hand"
                                 Background="Transparent"
                                 BorderThickness="0"
@@ -1291,22 +1274,21 @@
                                                 </ListBox.Styles>
                                             </ListBox>
                                             <StackPanel IsVisible="{Binding !IsUngrouped}">
-                                                <!-- Match list margin (8), Suki item border padding (8), and item content padding (8). -->
-                                                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto"
-                                                      Margin="24,8,24,8" HorizontalAlignment="Stretch"
+                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto"
+                                                      Margin="12,8,20,8" HorizontalAlignment="Stretch"
                                                       Background="Transparent"
                                                       PointerPressed="TaskGroupHeader_OnPointerPressed"
                                                       PointerMoved="TaskGroupHeader_OnPointerMoved"
                                                       PointerReleased="TaskGroupHeader_OnPointerReleased"
                                                       PointerCaptureLost="TaskGroupHeader_OnPointerCaptureLost">
                                                     <CheckBox Grid.Column="0" IsThreeState="True" MinWidth="0"
-                                                              Margin="0,0,8,0" HorizontalAlignment="Center"
+                                                              Margin="0,0,4,0" HorizontalAlignment="Center"
                                                               VerticalAlignment="Center" IsEnabled="{Binding CanSelect}"
                                                               IsChecked="{Binding SelectionState, Mode=OneWay}"
                                                               Click="TaskGroupSelection_OnClick"
                                                               ToolTip.Tip="{markup:I18n TaskGroupSelect}" />
                                                     <TextBox Grid.Column="1" Text="{Binding Label, Mode=OneWay}"
-                                                             MinWidth="60" MaxWidth="160" Padding="0" BorderThickness="0"
+                                                             MinWidth="0" Padding="0" BorderThickness="0"
                                                              Background="Transparent" FontSize="12" FontWeight="Bold"
                                                              IsReadOnly="{Binding !CanEdit}"
                                                              LostFocus="TaskGroupName_OnLostFocus"
@@ -1318,10 +1300,13 @@
                                                             </Style>
                                                         </TextBox.Styles>
                                                     </TextBox>
-                                                    <TextBlock Grid.Column="3" Text="{Binding Items.Count}" Margin="8,0,0,0"
+                                                    <TextBlock Grid.Column="2" Text="{Binding Items.Count}" Margin="4,0,0,0"
                                                                Foreground="{DynamicResource SukiLowText}" FontSize="11" FontWeight="Bold"
                                                                VerticalAlignment="Center" />
-                                                    <ToggleButton Grid.Column="4" Classes="Basic" Margin="10,0,0,0"
+                                                    <ToggleButton Grid.Column="3" Classes="Basic" Margin="4,0,0,0"
+                                                                  Width="28" Height="28" Padding="0"
+                                                                  HorizontalContentAlignment="Center"
+                                                                  VerticalContentAlignment="Center"
                                                                   Background="Transparent" BorderThickness="0"
                                                                   IsChecked="{Binding IsExpanded, Mode=TwoWay}"
                                                                   ToolTip.Tip="{markup:I18n TaskGroupToggle}">
@@ -1332,10 +1317,21 @@
                                                                       IsVisible="{Binding !IsExpanded}" />
                                                         </Panel>
                                                     </ToggleButton>
-                                                    <Button Grid.Column="5" Classes="BasicTight" Margin="4,0,0,0"
-                                                            Command="{Binding DeleteCommand}" IsEnabled="{Binding CanEdit}"
-                                                            ToolTip.Tip="{markup:I18n TaskGroupDelete}">
-                                                            <avalonia1:FluentIcon Icon="Delete" IconSize="Size16" IconVariant="Regular" />
+                                                    <Button Grid.Column="4" Classes="BasicTight" Margin="0,0,2,0"
+                                                            Width="28" Height="28"
+                                                            HorizontalContentAlignment="Center"
+                                                            VerticalContentAlignment="Center"
+                                                            IsEnabled="{Binding CanEdit}"
+                                                            AutomationProperties.Name="{markup:I18n TaskMoreActions}"
+                                                            ToolTip.Tip="{markup:I18n TaskMoreActions}">
+                                                        <avalonia1:FluentIcon Icon="MoreHorizontal" IconSize="Size16" IconVariant="Regular" />
+                                                        <Button.Flyout>
+                                                            <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                                                <MenuItem Header="{markup:I18n TaskGroupDelete}"
+                                                                          Command="{Binding DeleteCommand}"
+                                                                          IsEnabled="{Binding CanEdit}" />
+                                                            </MenuFlyout>
+                                                        </Button.Flyout>
                                                     </Button>
                                                 </Grid>
                                                 <ListBox Classes="Fluent" Padding="0" IsVisible="{Binding IsExpanded}"
@@ -1385,6 +1381,8 @@
                         </ListBox.ItemsPanel>
                         <ListBox.Styles>
                             <Style Selector="ListBoxItem">
+                                <Setter Property="Padding" Value="8" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             </Style>
                         </ListBox.Styles>
                         <ListBox.ItemTemplate>
@@ -1396,12 +1394,12 @@
 
             <dashboard:DashboardCard x:Name="IntroductionCard"
                                      CardId="task_desc"
-                                     GridColumn="4"
-                                     GridRow="5"
-                                     GridColumnSpan="4"
-                                     GridRowSpan="3"
-                                     ExpandedColumnSpan="4"
-                                     ExpandedRowSpan="3">
+                                     GridColumn="3"
+                                     GridRow="0"
+                                     GridColumnSpan="6"
+                                     GridRowSpan="2"
+                                     ExpandedColumnSpan="6"
+                                     ExpandedRowSpan="2">
                 <dashboard:DashboardCard.TitleContent>
                     <TextBlock FontSize="11"
                                FontWeight="Bold"
@@ -1429,12 +1427,12 @@
 
             <dashboard:DashboardCard x:Name="LiveViewCard"
                                      CardId="live_view"
-                                     GridColumn="8"
+                                     GridColumn="9"
                                      GridRow="0"
-                                     GridColumnSpan="4"
-                                     GridRowSpan="4"
-                                     ExpandedColumnSpan="4"
-                                     ExpandedRowSpan="4"
+                                     GridColumnSpan="3"
+                                     GridRowSpan="6"
+                                     ExpandedColumnSpan="3"
+                                     ExpandedRowSpan="6"
                                      CollapsedHeight="40">
                 <dashboard:DashboardCard.TitleContent>
                     <TextBlock FontSize="11"
@@ -1444,52 +1442,20 @@
                                Text="{markup:I18n {x:Static helper:LangKeys.LiveView}}"
                                VerticalAlignment="Center" />
                 </dashboard:DashboardCard.TitleContent>
-                <Grid IsVisible="{Binding IsLiveViewExpanded}"
-                      Margin="0,8,0,0"
-                      HorizontalAlignment="Center"
-                      VerticalAlignment="Top">
-                    <Border x:Name="LiveViewFrame"
-                            CornerRadius="12"
-                            ClipToBounds="True"
-                            Background="Transparent"
-                            BorderBrush="{DynamicResource SukiControlBorderBrush}"
-                            BorderThickness="0"
-                            MinWidth="260"
-                            MinHeight="160"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center">
-                        <Border CornerRadius="12" ClipToBounds="True">
-                            <Grid>
-                                <StackPanel
-                                    IsVisible="{Binding LiveViewImage, Converter={x:Static ObjectConverters.IsNull}}"
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    Spacing="8">
-                                    <avalonia1:FluentIcon Icon="Desktop"
-                                                          IconSize="Size32"
-                                                          Foreground="{DynamicResource SukiLowText}" />
-                                    <TextBlock
-                                        Text="{markup:I18n {x:Static helper:LangKeys.ScreenshotPlaceholder}}"
-                                        FontSize="13"
-                                        FontWeight="SemiBold"
-                                        Foreground="{DynamicResource SukiLowText}"
-                                        HorizontalAlignment="Center" />
-                                </StackPanel>
-                                <Image
-                                    Source="{Binding LiveViewImage}"
-                                    IsVisible="{Binding LiveViewImage, Converter={x:Static ObjectConverters.IsNotNull}}"
-                                    Stretch="Uniform"
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center" />
-                            </Grid>
-                        </Border>
-                    </Border>
+                <Grid IsVisible="{Binding IsLiveViewExpanded}" Margin="8">
+                    <StackPanel IsVisible="{Binding LiveViewImage, Converter={x:Static ObjectConverters.IsNull}}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                        <avalonia1:FluentIcon Icon="Desktop" IconSize="Size32"
+                                              Foreground="{DynamicResource SukiLowText}" />
+                        <TextBlock Text="{markup:I18n {x:Static helper:LangKeys.ScreenshotPlaceholder}}"
+                                   FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource SukiLowText}" HorizontalAlignment="Center" />
+                    </StackPanel>
+                    <Image Source="{Binding LiveViewImage}"
+                           IsVisible="{Binding LiveViewImage, Converter={x:Static ObjectConverters.IsNotNull}}"
+                           Stretch="Uniform" />
 
                     <Grid
-                        Width="{Binding Bounds.Width, ElementName=LiveViewFrame}"
-                        Height="{Binding Bounds.Height, ElementName=LiveViewFrame}"
-                        VerticalAlignment="Center"
-                        HorizontalAlignment="Center"
                         IsHitTestVisible="False"
                         RowDefinitions="Auto,*"
                         ColumnDefinitions="Auto,*">
@@ -1574,16 +1540,17 @@
                                     BorderThickness="1"
                                     CornerRadius="12"
                                     Opacity="0.66" />
-                            <StackPanel Orientation="Horizontal" Margin="8,4">
+                            <Grid ColumnDefinitions="Auto,Auto,*" Margin="8,4">
                                 <TextBlock Text="{markup:I18n {x:Static helper:LangKeys.Task}}"
                                            FontSize="11"
                                            Foreground="{DynamicResource SukiText}" />
-                                <TextBlock Text=": " FontSize="11" Foreground="{DynamicResource SukiText}" />
-                                <TextBlock
-                                    Text="{Binding CurrentTaskName}"
-                                    FontSize="11"
-                                    Foreground="{DynamicResource SukiText}" />
-                            </StackPanel>
+                                <TextBlock Grid.Column="1" Text=": " FontSize="11" Foreground="{DynamicResource SukiText}" />
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding CurrentTaskName}"
+                                           TextTrimming="CharacterEllipsis"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SukiText}" />
+                            </Grid>
                         </Grid>
 
                         <Grid Grid.Row="1" Grid.Column="0"
@@ -1607,12 +1574,12 @@
 
             <dashboard:DashboardCard x:Name="LogCard"
                                      CardId="log"
-                                     GridColumn="8"
-                                     GridRow="4"
-                                     GridColumnSpan="4"
-                                     GridRowSpan="4"
-                                     ExpandedColumnSpan="4"
-                                     ExpandedRowSpan="4">
+                                     GridColumn="3"
+                                     GridRow="6"
+                                     GridColumnSpan="9"
+                                     GridRowSpan="2"
+                                     ExpandedColumnSpan="9"
+                                     ExpandedRowSpan="2">
                 <dashboard:DashboardCard.TitleContent>
                     <TextBlock FontSize="11"
                                FontWeight="Bold"
